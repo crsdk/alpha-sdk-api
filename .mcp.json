@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "CameraRemoteSDK": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://sdk-rag-agent-production.up.railway.app/mcp"
+      ]
+    },
+    "CameraHelp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://camera-rag-agent-production.up.railway.app/mcp"
+      ]
+    },
+    "CameraWebAPI": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://crsdk.app/mcp"
+      ]
+    }
+  }
+}

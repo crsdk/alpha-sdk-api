@@ -1,0 +1,1335 @@
+openapi: 3.1.0
+info:
+  title: Camera Remote SDK Web API
+  version: 3.0.0
+  description: |
+    RESTful control for Sony cameras — shooting, settings, live view with OSD overlay,
+    focus control, and file transfer through a clean HTTP interface.
+
+    Built on the Sony Camera Remote SDK. Supports USB and network camera connections
+    with multi-camera simultaneous operation.
+
+    ## Connection Modes
+
+    | Mode | Description |
+    |------|-------------|
+    | `remote` | Full camera control: shooting, settings, live view. Auto-transfer images to host PC. |
+    | `remote-transfer` | Camera control + explicit SD card file access. Most capable mode. |
+    | `contents-transfer` | SD card file access only. No shooting or settings control. |
+
+    ## Quick Start
+
+    1. `GET /api/cameras` — discover cameras
+    2. `POST /api/cameras/{id}/connection` — connect
+    3. `PUT /api/cameras/{id}/priority-key` — set to `pc-remote`
+    4. `PUT /api/cameras/{id}/properties/{name}` — configure settings
+    5. `POST /api/cameras/{id}/actions/af-shutter` — shoot
+    6. `DELETE /api/cameras/{id}/connection` — disconnect
+
+    ## Priority Key Requirement
+
+    The camera's priority key **must** be set to `pc-remote` before it accepts any
+    remote property changes or shooting commands.
+  license:
+    name: MIT
+  contact:
+    name: Camera Remote SDK
+
+servers:
+  - url: http://localhost:8080
+    description: Local camera server
+
+# No authentication — local server only
+security: []
+
+tags:
+  - name: Connection
+    description: Camera discovery, connection, and disconnection
+  - name: Properties
+    description: Read and write camera properties (ISO, aperture, shutter speed, etc.)
+  - name: Actions
+    description: Shooting commands and motor control (shutter, zoom, focus)
+  - name: Live View
+    description: Live view streaming and OSD overlay control
+  - name: Events
+    description: Server-Sent Events for real-time camera callbacks
+  - name: SD Card
+    description: SD card file browsing and download
+  - name: Settings
+    description: Save path configuration and camera settings file management
+  - name: WebSocket
+    description: WebSocket live view streaming (binary JPEG frames)
+  - name: Server
+    description: Server health, status, and log retrieval
+
+paths:
+  # ============================================================
+  # Server Management
+  # ============================================================
+
+  /api/server/status:
+    get:
+      operationId: getServerStatus
+      summary: Server health check
+      description: |
+        Returns server health, uptime, version info, and connected camera count.
+        Used by the TypeScript `ServerManager` to confirm the server is ready after spawning the binary.
+      tags: [Server]
+      responses:
+        "200":
+          description: Server is running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerStatus"
+
+  /api/server/logs:
+    get:
+      operationId: getServerLogs
+      summary: Get recent server logs
+      description: |
+        Returns buffered server log output. Useful for debugging connection issues,
+        SDK errors, and property change confirmations without accessing the terminal.
+      tags: [Server]
+      parameters:
+        - name: lines
+          in: query
+          description: Number of recent log lines to return (default 100)
+          schema:
+            type: integer
+            default: 100
+        - name: level
+          in: query
+          description: Minimum log level filter
+          schema:
+            type: string
+            enum: [debug, info, warn, error]
+            default: info
+      responses:
+        "200":
+          description: Log entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  logs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LogEntry"
+                  total:
+                    type: integer
+                    description: Total buffered log count
+
+  /api/server/shutdown:
+    post:
+      operationId: shutdownServer
+      summary: Graceful server shutdown
+      description: |
+        Initiates graceful shutdown: disconnects all cameras, closes SSE/WebSocket
+        connections, then exits. The TypeScript `ServerManager.stop()` calls this
+        before falling back to SIGTERM.
+      tags: [Server]
+      responses:
+        "200":
+          description: Shutdown initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  # ============================================================
+  # Connection
+  # ============================================================
+
+  /api/cameras:
+    get:
+      operationId: listCameras
+      summary: List available cameras
+      description: Enumerate all cameras connected via USB and network.
+      tags: [Connection]
+      responses:
+        "200":
+          description: Camera list retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, cameras]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  cameras:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CameraInfo"
+
+  /api/cameras/{cameraId}/connection:
+    post:
+      operationId: connectCamera
+      summary: Connect to camera
+      description: Establish connection in the specified mode. Defaults to `remote` if no mode provided.
+      tags: [Connection]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectionRequest"
+      responses:
+        "200":
+          description: Camera connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: Connection failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    get:
+      operationId: getConnectionStatus
+      summary: Check connection status
+      tags: [Connection]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Connection status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+    delete:
+      operationId: disconnectCamera
+      summary: Disconnect camera
+      tags: [Connection]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Camera disconnected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  # ============================================================
+  # Properties
+  # ============================================================
+
+  /api/cameras/{cameraId}/properties/{propertyName}:
+    get:
+      operationId: getProperty
+      summary: Get a camera property
+      description: |
+        Returns the current value, human-readable format, writability flag, and all
+        values the camera currently accepts for this property.
+      tags: [Properties]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+        - $ref: "#/components/parameters/propertyName"
+      responses:
+        "200":
+          description: Property retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  camera:
+                    $ref: "#/components/schemas/CameraSummary"
+                  data:
+                    $ref: "#/components/schemas/PropertyData"
+        "400":
+          description: Invalid property name or camera not connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      operationId: setProperty
+      summary: Set a camera property
+      description: |
+        Set a camera property value. Accepts hex values (from GET response `available_values`)
+        or human-readable strings (e.g. `"f/5.6"`, `"1/250"`, `"wide"`).
+
+        The server validates against the camera's current available values and checks
+        writability before sending to the SDK.
+      tags: [Properties]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+        - $ref: "#/components/parameters/propertyName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PropertySetRequest"
+      responses:
+        "200":
+          description: Property set successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: Invalid value, property not writable, or camera not in pc-remote mode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/cameras/{cameraId}/properties/all:
+    get:
+      operationId: getAllProperties
+      summary: Get all camera properties
+      description: Returns all mapped properties with their current formatted values.
+      tags: [Properties]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: All properties retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  camera:
+                    $ref: "#/components/schemas/CameraSummary"
+                  properties:
+                    type: object
+                    additionalProperties:
+                      type: string
+                    description: Map of property names to formatted values
+                    example:
+                      iso: "400"
+                      aperture: "F5.6"
+                      shutter-speed: "1/250"
+
+  /api/cameras/{cameraId}/priority-key:
+    get:
+      operationId: getPriorityKey
+      summary: Get priority key setting
+      description: Returns the current priority key setting (pc-remote or camera-position).
+      tags: [Properties]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Priority key retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  camera:
+                    $ref: "#/components/schemas/CameraSummary"
+                  data:
+                    $ref: "#/components/schemas/PriorityKeyData"
+
+    put:
+      operationId: setPriorityKey
+      summary: Set priority key
+      description: |
+        Set the priority key. Must be `pc-remote` for the camera to accept remote
+        property changes and shooting commands.
+      tags: [Properties]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [setting]
+              properties:
+                setting:
+                  $ref: "#/components/schemas/PriorityKeySetting"
+      responses:
+        "200":
+          description: Priority key set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  # ============================================================
+  # Actions
+  # ============================================================
+
+  /api/cameras/{cameraId}/actions/shutter:
+    post:
+      operationId: triggerShutter
+      summary: Take a photo
+      description: |
+        Single shot (no body or empty body), or continuous shooting with `down`/`up` control.
+        For continuous shooting, set drive mode to a continuous mode first.
+      tags: [Actions]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShutterRequest"
+      responses:
+        "200":
+          description: Shutter action executed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/actions/half-press:
+    post:
+      operationId: halfPress
+      summary: Focus lock (S1 half-press)
+      description: Half-press the shutter button to lock autofocus. No body required.
+      tags: [Actions]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Half-press executed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/actions/af-shutter:
+    post:
+      operationId: afShutter
+      summary: Auto-focus + capture
+      description: Autofocus then immediately capture in one operation. No body required.
+      tags: [Actions]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: AF + shutter executed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/actions/zoom:
+    post:
+      operationId: controlZoom
+      summary: Power zoom control
+      description: Control power zoom lenses. Requires a power zoom lens to be attached.
+      tags: [Actions]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZoomRequest"
+      responses:
+        "200":
+          description: Zoom command executed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/actions/focus-near-far:
+    post:
+      operationId: focusNearFar
+      summary: Step-based focus adjustment
+      description: |
+        Move focus toward near or far in discrete steps.
+        Range: `-7` (near, max speed) to `+7` (far, max speed).
+        Magnitude controls speed. `0` is not valid.
+      tags: [Actions]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FocusNearFarRequest"
+      responses:
+        "200":
+          description: Focus command executed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  # ============================================================
+  # Live View & OSD
+  # ============================================================
+
+  /api/cameras/{cameraId}/live-view/enable:
+    post:
+      operationId: enableLiveView
+      summary: Enable live view on camera
+      description: Sends the SDK `Setting_Key_EnableLiveView` command to the camera.
+      tags: [Live View]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Live view enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/live-view/disable:
+    post:
+      operationId: disableLiveView
+      summary: Disable live view on camera
+      tags: [Live View]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Live view disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/live-view/status:
+    get:
+      operationId: getLiveViewStatus
+      summary: Get live view status
+      tags: [Live View]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Live view status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  camera:
+                    $ref: "#/components/schemas/CameraSummary"
+                  data:
+                    $ref: "#/components/schemas/LiveViewStatus"
+
+  /api/cameras/{cameraId}/live-view/start:
+    post:
+      operationId: startLiveViewStream
+      summary: Start frame capture
+      description: Starts the frame capture worker thread. Auto-enables live view if disabled.
+      tags: [Live View]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Streaming started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/live-view/stop:
+    post:
+      operationId: stopLiveViewStream
+      summary: Stop frame capture
+      tags: [Live View]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Streaming stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/live-view/frame:
+    get:
+      operationId: getLiveViewFrame
+      summary: Get single JPEG frame
+      description: Returns the latest live view frame as a JPEG image. Streaming must be started first.
+      tags: [Live View]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: JPEG frame
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+
+  /api/cameras/{cameraId}/live-view/osd-enable:
+    post:
+      operationId: enableOSD
+      summary: Enable OSD overlay
+      description: Enable On-Screen Display overlay via `CrDeviceProperty_OSDImageMode`.
+      tags: [Live View]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: OSD enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/live-view/osd-disable:
+    post:
+      operationId: disableOSD
+      summary: Disable OSD overlay
+      tags: [Live View]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: OSD disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/live-view/osd-status:
+    get:
+      operationId: getOSDStatus
+      summary: Get OSD status
+      tags: [Live View]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: OSD status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  camera:
+                    $ref: "#/components/schemas/CameraSummary"
+                  data:
+                    $ref: "#/components/schemas/OSDStatus"
+
+  /api/cameras/{cameraId}/live-view/osd-frame:
+    get:
+      operationId: getOSDFrame
+      summary: Get composited OSD frame
+      description: Returns a composited JPEG with live view image + camera UI overlay.
+      tags: [Live View]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Composited JPEG frame
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+
+  # ============================================================
+  # Events (SSE)
+  # ============================================================
+
+  /api/events:
+    get:
+      operationId: subscribeAllEvents
+      summary: Subscribe to all camera events
+      description: |
+        Server-Sent Events stream for all connected cameras. Keepalive comment every 30s.
+
+        ## Event Types
+
+        | Event | SDK Callback | Description |
+        |-------|-------------|-------------|
+        | `connected` | `OnConnected` | Camera connection established |
+        | `disconnected` | `OnDisconnected` | Camera disconnected |
+        | `propertyChanged` | `OnPropertyChangedCodes` | Property values changed |
+        | `warning` | `OnWarning` | Camera warning/notification (code `0x20011` = image captured) |
+        | `afStatus` | `OnWarningExt` | Autofocus state: `focused`, `unlocked`, `tracking` |
+        | `downloadComplete` | `OnCompleteDownload` | Auto-transferred image saved (remote mode only) |
+        | `transferProgress` | `OnNotifyRemoteTransferResult` | File pull completed (remote-transfer mode) |
+        | `error` | `OnError` | SDK error occurred |
+
+        ## Example
+
+        ```javascript
+        const events = new EventSource("http://localhost:8080/api/events");
+        events.addEventListener("downloadComplete", (e) => {
+          console.log("File saved:", JSON.parse(e.data).filename);
+        });
+        ```
+      tags: [Events]
+      responses:
+        "200":
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events stream
+
+  /api/cameras/{cameraId}/events:
+    get:
+      operationId: subscribeCameraEvents
+      summary: Subscribe to events for a specific camera
+      description: Same event types as the global endpoint, filtered to a single camera.
+      tags: [Events]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: SSE event stream for this camera
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  # ============================================================
+  # SD Card
+  # ============================================================
+
+  /api/cameras/{cameraId}/sd-card/slot/{slotNumber}/files:
+    get:
+      operationId: listSDCardFiles
+      summary: List SD card files
+      description: |
+        List files on the SD card. Requires `remote-transfer` or `contents-transfer` mode.
+      tags: [SD Card]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+        - $ref: "#/components/parameters/slotNumber"
+      responses:
+        "200":
+          description: File list retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                  slot:
+                    type: integer
+                  file_count:
+                    type: integer
+                  files:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SDCardFile"
+
+  /api/cameras/{cameraId}/sd-card/slot/{slotNumber}/files/{contentId}/{fileId}/download:
+    post:
+      operationId: downloadSDCardFile
+      summary: Download file from SD card
+      description: Download a specific file from the SD card to the host PC.
+      tags: [SD Card]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+        - $ref: "#/components/parameters/slotNumber"
+        - name: contentId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                save_path:
+                  type: string
+                  description: Directory path on host PC to save the file
+      responses:
+        "200":
+          description: File downloaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  filename:
+                    type: string
+                  progress:
+                    type: integer
+                  saved_path:
+                    type: string
+
+  # ============================================================
+  # Settings
+  # ============================================================
+
+  /api/cameras/{cameraId}/settings/save-info:
+    get:
+      operationId: getSaveInfo
+      summary: Get save path configuration
+      description: Returns the current save directory, filename prefix, and start number for auto-transferred images.
+      tags: [Settings]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Save info retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  camera:
+                    $ref: "#/components/schemas/CameraSummary"
+                  data:
+                    $ref: "#/components/schemas/SaveInfoData"
+
+    put:
+      operationId: setSaveInfo
+      summary: Set save path configuration
+      description: Configure the save directory, filename prefix, and start number.
+      tags: [Settings]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveInfoRequest"
+      responses:
+        "200":
+          description: Save info set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/settings/download:
+    post:
+      operationId: downloadCameraSettings
+      summary: Save camera settings to PC
+      description: Download the camera's current settings to a file on the host PC.
+      tags: [Settings]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsFileRequest"
+      responses:
+        "200":
+          description: Settings file saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/settings/upload:
+    post:
+      operationId: uploadCameraSettings
+      summary: Load settings to camera
+      description: Upload a previously saved settings file back to the camera.
+      tags: [Settings]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsFileRequest"
+      responses:
+        "200":
+          description: Settings uploaded to camera
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+
+  /api/cameras/{cameraId}/settings/files:
+    get:
+      operationId: listSettingsFiles
+      summary: List saved settings files
+      tags: [Settings]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Settings file list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  files:
+                    type: array
+                    items:
+                      type: string
+
+  # ============================================================
+  # WebSocket
+  # ============================================================
+
+  /ws:
+    get:
+      operationId: liveViewWebSocket
+      summary: Live view WebSocket
+      description: |
+        **WebSocket endpoint** — upgrade via standard HTTP `Connection: Upgrade` handshake.
+        Connect with `binaryType: 'arraybuffer'`.
+
+        Each binary message is a complete JPEG frame at ~15fps. Supports per-camera
+        streaming — multiple clients can stream from different cameras simultaneously.
+
+        ### Commands (send as JSON text)
+
+        **Start live view:**
+        ```json
+        {"action": "start_liveview", "cameraId": "D10F60149B0C"}
+        ```
+
+        **Stop live view:**
+        ```json
+        {"action": "stop_liveview"}
+        ```
+
+        ### Client Example
+
+        ```javascript
+        const ws = new WebSocket('ws://localhost:8080/ws');
+        ws.binaryType = 'arraybuffer';
+
+        ws.onopen = () => {
+          ws.send(JSON.stringify({
+            action: 'start_liveview',
+            cameraId: 'D10F60149B0C'
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          const blob = new Blob([event.data], { type: 'image/jpeg' });
+          document.getElementById('liveView').src = URL.createObjectURL(blob);
+        };
+        ```
+      tags: [WebSocket]
+      x-websocket: true
+      responses:
+        "101":
+          description: WebSocket upgrade — binary JPEG frames at ~15fps
+
+# ============================================================
+# Components
+# ============================================================
+
+components:
+  parameters:
+    cameraId:
+      name: cameraId
+      in: path
+      required: true
+      description: Camera identifier (e.g. `D10F60149B0C`)
+      schema:
+        type: string
+
+    propertyName:
+      name: propertyName
+      in: path
+      required: true
+      description: Property name
+      schema:
+        $ref: "#/components/schemas/PropertyName"
+
+    slotNumber:
+      name: slotNumber
+      in: path
+      required: true
+      description: SD card slot number (1 or 2)
+      schema:
+        type: integer
+        enum: [1, 2]
+
+  schemas:
+    # --- Camera objects ---
+
+    CameraInfo:
+      type: object
+      description: Camera discovered during enumeration
+      required: [id, model, connectionType, connected]
+      properties:
+        id:
+          type: string
+          example: D10F60149B0C
+        model:
+          type: string
+          example: ILCE-9M3
+        connectionType:
+          type: string
+          enum: [USB, Network]
+        connected:
+          type: boolean
+
+    CameraSummary:
+      type: object
+      description: Camera info embedded in API responses
+      properties:
+        connected:
+          type: boolean
+        model:
+          type: string
+        id:
+          type: string
+
+    # --- Standard responses ---
+
+    CameraResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        camera:
+          $ref: "#/components/schemas/CameraSummary"
+        data:
+          type: object
+          additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          const: false
+        message:
+          type: string
+        camera:
+          $ref: "#/components/schemas/CameraSummary"
+
+    # --- Property schemas ---
+
+    PropertyData:
+      type: object
+      description: Property value with metadata and available options
+      required: [property, value, formatted, writable]
+      properties:
+        property:
+          type: string
+        value:
+          type: string
+          description: Hex-encoded current value
+          example: "0x1007d"
+        formatted:
+          type: string
+          description: Human-readable display value
+          example: "1/125"
+        writable:
+          type: string
+          enum: ["true", "false"]
+          description: Whether the property can be set in current mode
+        available_values:
+          type: array
+          items:
+            $ref: "#/components/schemas/AvailableValue"
+
+    AvailableValue:
+      type: object
+      required: [value, formatted]
+      properties:
+        value:
+          type: string
+          description: Hex value to use in SET requests
+          example: "0x11f40"
+        formatted:
+          type: string
+          description: Human-readable label
+          example: "1/8000"
+
+    PriorityKeyData:
+      type: object
+      properties:
+        setting:
+          $ref: "#/components/schemas/PriorityKeySetting"
+        rawValue:
+          type: string
+
+    LiveViewStatus:
+      type: object
+      properties:
+        enabled:
+          type: string
+          enum: ["true", "false"]
+        streaming:
+          type: string
+          enum: ["true", "false"]
+
+    OSDStatus:
+      type: object
+      properties:
+        supported:
+          type: string
+          enum: ["true", "false"]
+        enabled:
+          type: string
+          enum: ["true", "false"]
+
+    SaveInfoData:
+      type: object
+      properties:
+        path:
+          type: string
+        prefix:
+          type: string
+        startNo:
+          type: string
+
+    SDCardFile:
+      type: object
+      properties:
+        content_id:
+          type: integer
+        file_id:
+          type: integer
+        file_path:
+          type: string
+          example: "DCIM/100MSDCF/DSC00001.ARW"
+        file_size:
+          type: integer
+          description: File size in bytes
+
+    # --- Request schemas ---
+
+    ConnectionRequest:
+      type: object
+      properties:
+        mode:
+          $ref: "#/components/schemas/ConnectionMode"
+        username:
+          type: string
+          description: For network cameras
+        password:
+          type: string
+          description: For network cameras
+        reconnecting:
+          type: string
+          enum: ["on", "off"]
+          description: Auto-reconnect on disconnection
+
+    PropertySetRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: string
+          description: |
+            Hex value from `available_values` (e.g. `"0x1007d"`), human-readable
+            string (e.g. `"1/125"`, `"f/5.6"`, `"wide"`), or decimal string.
+
+    ShutterRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [down, up]
+          description: |
+            For continuous shooting: `down` to start, `up` to stop.
+            Omit for single shot.
+
+    ZoomRequest:
+      type: object
+      required: [direction, speed]
+      properties:
+        direction:
+          type: string
+          enum: [in, out]
+        speed:
+          type: string
+          enum: [normal, fast]
+
+    FocusNearFarRequest:
+      type: object
+      required: [step]
+      properties:
+        step:
+          type: integer
+          minimum: -7
+          maximum: 7
+          description: |
+            Negative = near, positive = far. Magnitude controls speed. 0 is invalid.
+
+    SaveInfoRequest:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Directory path on host PC
+        prefix:
+          type: string
+          description: Filename prefix
+        startNo:
+          type: integer
+          description: Starting file number
+
+    SettingsFileRequest:
+      type: object
+      properties:
+        filename:
+          type: string
+          description: Settings filename (e.g. `CUMSET.DAT`)
+
+    # --- Server schemas ---
+
+    ServerStatus:
+      type: object
+      properties:
+        success:
+          type: boolean
+        server:
+          type: object
+          properties:
+            version:
+              type: string
+              description: API version
+              example: "3.0.0"
+            sdkVersion:
+              type: string
+              description: Sony Camera Remote SDK version
+              example: "V1.14.00"
+            uptime:
+              type: integer
+              description: Server uptime in seconds
+            platform:
+              type: string
+              description: Host OS platform
+              example: "darwin-arm64"
+        cameras:
+          type: object
+          properties:
+            connected:
+              type: integer
+              description: Number of currently connected cameras
+            discovered:
+              type: integer
+              description: Number of discovered (available) cameras
+
+    LogEntry:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        level:
+          type: string
+          enum: [debug, info, warn, error]
+        message:
+          type: string
+        cameraId:
+          type: string
+          description: Camera ID if log is camera-specific
+
+    # --- Enums ---
+
+    ConnectionMode:
+      type: string
+      enum: [remote, remote-transfer, contents-transfer]
+      description: |
+        - `remote` — Full control + auto-transfer
+        - `remote-transfer` — Full control + explicit SD card access
+        - `contents-transfer` — SD card access only
+
+    PropertyName:
+      type: string
+      enum:
+        - iso
+        - aperture
+        - shutter-speed
+        - exposure-program-mode
+        - focus-mode
+        - focus-area
+        - white-balance
+        - drive-mode
+        - file-format
+        - image-quality
+        - raw-compression
+        - still-image-store-destination
+        - focus-position
+        - focus-position-current
+        - focus-driving-status
+        - focus-distance
+        - zoom-distance
+      description: |
+        Supported property names. Use `GET /properties/all` to see all properties.
+
+        **Read/Write:** iso, aperture, shutter-speed, focus-mode, focus-area,
+        white-balance, drive-mode, file-format, image-quality, raw-compression,
+        still-image-store-destination, focus-position
+
+        **Read-only:** exposure-program-mode (dial-controlled), focus-position-current,
+        focus-driving-status, focus-distance, zoom-distance
+
+    PriorityKeySetting:
+      type: string
+      enum: [pc-remote, camera-position]
+      description: |
+        - `pc-remote` — Server has control (required for remote operation)
+        - `camera-position` — Camera body has control

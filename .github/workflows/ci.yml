@@ -1,0 +1,56 @@
+name: CI
+
+# Public, SDK-free CI. The Sony Camera Remote SDK can only be obtained by a human
+# manually accepting Sony's license form on the official download page, so nothing
+# SDK-related (headers, libraries, or the stock shared/core helper sources) can be
+# fetched, installed, or built here. Official platform binaries are produced by
+# Sony out-of-band. This workflow runs only checks that need no SDK.
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  compliance:
+    name: License compliance (no SDK source committed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert no Sony SDK / wrapper / binary files are tracked
+        shell: bash
+        run: |
+          echo "Checking that no SDK source or binaries are committed..."
+          matches=$(git ls-files | grep -E \
+            'shared/(sdk|opencv/(include|Darwin|Linux|Windows))/|shared/core/.*\.(cpp|h)$|\.(dylib|so|dll|a)$' \
+            || true)
+          if [ -n "$matches" ]; then
+            echo "::error::Sony SDK / wrapper / binary files must not be committed to this public repo:"
+            echo "$matches"
+            echo ""
+            echo "Only shared/core/CMakeLists.txt and shared/core/README.md may be tracked."
+            echo "See docs/SDK_SETUP.md."
+            exit 1
+          fi
+          echo "OK: no SDK source or binaries tracked."
+
+  unit-tests:
+    name: Unit tests (deterministic, no camera/SDK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run unit tests
+        working-directory: tests/unit
+        run: npm test
+
+  scripts:
+    name: Shell script checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax-check extraction helper
+        run: bash -n scripts/extract-sdk.sh

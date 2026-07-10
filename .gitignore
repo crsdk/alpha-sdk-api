@@ -1,0 +1,102 @@
+# Build directories
+build/
+api/server/build/
+api/build/
+cli/build/
+
+# Local assistant configuration
+.claude/
+.codex/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Compiled binaries
+*.exe
+*.out
+*.app
+RemoteCli
+CameraWebApp
+
+# Libraries
+*.so
+*.dylib
+*.dll
+*.a
+
+# Node modules (all locations)
+node_modules/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Camera image files
+*.JPG
+*.jpg
+*.jpeg
+*.ARW
+*.arw
+
+# Camera settings files
+*.DAT
+
+# SDK binary archives (large zips)
+crsdk binaries/
+*.zip
+
+# Locally downloaded Sony Camera Remote SDK files
+shared/sdk/include/
+shared/sdk/lib/
+shared/binaries/
+
+# Sony sample-derived integration wrapper (CameraDevice, PropertyValueTable,
+# CrDebugString, MessageDefine, ConnectionInfo, Text, OpenCVWrapper). This code
+# is part of Sony's Camera Remote SDK and is NOT redistributed here. Each
+# contributor obtains it from the SDK download (see docs/SDK_SETUP.md); it is
+# placed into shared/core/ by scripts/extract-sdk.sh. Only CMakeLists.txt and
+# README.md are tracked in this folder.
+shared/core/*.cpp
+shared/core/*.h
+shared/core/*.code-workspace
+
+# Locally copied vendor binaries
+shared/opencv/include/
+shared/opencv/Darwin/
+shared/opencv/Linux/
+shared/opencv/Windows/
+
+# Packaged release artifacts
+api/distribution/package/
+
+# Screenshots
+*.png
+
+# Changelogs (auto-generated)
+changelog.txt
+
+# CPA (Claude Code tooling) cost/telemetry artifacts — written into the working
+# directory of tracked commands; not part of this project.
+.cpa-workflow-artifacts/
+
+# Private binary-build CI. This workflow downloads the Sony SDK from a private
+# release and belongs only in the private npm-publishing copy of the repo, not
+# in the public open-source repo. Kept out of the public repo via gitignore.
+.github/workflows/build-binaries.yml

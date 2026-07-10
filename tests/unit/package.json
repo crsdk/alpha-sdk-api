@@ -1,0 +1,9 @@
+{
+  "name": "alpha-camera-rest-api-unit-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test src/**/*.test.mjs",
+    "coverage": "node --test --experimental-test-coverage --test-coverage-include=src/lib/request-helpers.mjs --test-coverage-lines=100 --test-coverage-functions=100 --test-coverage-branches=100 src/**/*.test.mjs"
+  }
+}

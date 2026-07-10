@@ -1,0 +1,249 @@
+#ifndef CAMERA_DEVICE_REST_H
+#define CAMERA_DEVICE_REST_H
+
+// CameraDeviceRest — MIT-licensed, non-interactive Sony camera device layer.
+//
+// This class is the REST server's own device abstraction. It replaces the
+// heavily-forked `cli::CameraDevice` that used to live in shared/core. The
+// public repo ships only the *stock* Sony SDK sample sources in shared/core
+// (fetched from the SDK download, never redistributed); all REST-specific,
+// non-interactive behavior lives here in api/server as original MIT code.
+//
+// Design notes:
+//   * The generic property get/set path in CameraWebController talks to the SDK
+//     directly using get_device_handle() (SDK::GetSelectDeviceProperties /
+//     SDK::SetDeviceProperty). So the primary contract this class exposes is the
+//     device handle plus the connection/callback lifecycle. Higher-level flows
+//     that the SDK models as multi-step (camera-settings transfer, zoom, movie
+//     toggle, AF+shutter) are provided as explicit methods.
+//   * It owns all of its own state — it does NOT reach into stock CameraDevice
+//     private members. It implements SCRSDK::IDeviceCallback itself so it can
+//     forward SDK events to SSE and correlate property-change callbacks with
+//     bounded HTTP waits.
+//   * Stock helper classes from shared/core (PropertyValueTable, CrDebugString,
+//     OpenCVWrapper) remain reusable and are called from here.
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstdint>
+#include <functional>
+#include <future>
+#include <mutex>
+#include <set>
+#include <string>
+#include <thread>
+#include <vector>
+
+#include "CameraRemote_SDK.h"
+#include "IDeviceCallback.h"
+#include "ConnectionInfo.h"      // stock: ConnectionType
+#include "PropertyValueTable.h"  // stock: value parse/format helpers
+#include "Text.h"                // stock: text type
+
+namespace rest {
+
+// Forward SDK events to external consumers (SSE / WebSocket).
+// Parameters: eventType, jsonData.
+using SdkEventCallback =
+    std::function<void(const std::string& eventType, const std::string& jsonData)>;
+
+// Tracks a pending file download for the macOS SDK V2.01 polling fallback.
+// Kept separate from normal callback handling so a future SDK version can drop
+// it without changing the transfer API.
+struct PendingTransfer {
+    std::string saveDir;                              // directory to poll
+    std::set<std::string> preSnapshot;                // files present before download
+    std::chrono::steady_clock::time_point startTime;
+};
+
+class CameraDeviceRest : public SCRSDK::IDeviceCallback {
+public:
+    CameraDeviceRest() = delete;
+    CameraDeviceRest(std::int32_t no, SCRSDK::ICrCameraObjectInfo const* camera_info);
+    ~CameraDeviceRest();
+
+    // --- SSE / event forwarding ---
+    void setEventCallback(SdkEventCallback cb) { m_eventCallback = std::move(cb); }
+
+    // --- Connection lifecycle (non-interactive) ---
+    bool connect(SCRSDK::CrSdkControlMode openMode, SCRSDK::CrReconnectingSet reconnect);
+    bool disconnect();
+    bool release();
+    bool is_connected() const { return m_connected.load(); }
+
+    // --- Identity / handle (primary contract used by the controller) ---
+    std::int32_t get_number() const { return m_number; }
+    std::int64_t get_device_handle() const { return m_deviceHandle; }
+    cli::text get_model() const { return cli::text(m_info->GetModel()); }
+    cli::text get_id() const;
+    SCRSDK::CrSdkControlMode get_sdkmode() const { return m_modeSDK; }
+
+    // --- Property helpers (formatting; raw get/set is done SDK-direct by the
+    //     controller via get_device_handle()) ---
+    void get_property(SCRSDK::CrDeviceProperty& prop) const;   // single-property fetch
+    cli::text getCurrentStr(SCRSDK::CrDeviceProperty* prop);   // format current value
+
+    // --- Exposure / focus / drive setters ---
+    // The dedicated legacy endpoints for ISO/aperture/shutter/WB/focus/exposure
+    // are superseded by the generic property endpoint (handle-direct
+    // SetDeviceProperty in CameraWebController). The stock SDK sample implemented
+    // these *interactively* (stdin prompts), which is unusable server-side, so
+    // they are intentionally no-ops here.
+    // Legacy no-arg worker setters (ISO/aperture/shutter/WB): the REST endpoints
+    // set these via the generic property path; these overloads are only reached
+    // by the legacy CameraOperationWorker and are intentionally inert.
+    void set_iso() {}
+    void set_aperture() {}
+    void set_shutter_speed() {}
+    void set_white_balance() {}
+
+    // Parameterized, non-interactive setters that REST endpoints call directly.
+    bool set_exposure_program_mode(CrInt64u value);
+    bool set_focus_mode(CrInt64u value);
+    bool set_focus_area(CrInt64u value);
+    bool set_drive_mode(CrInt64u value);
+    bool set_priority_key_to_pc_remote();  // enable PC remote control
+
+    // --- Shooting actions (non-interactive) ---
+    void capture_image() const;
+    void shutter_down() const;
+    void shutter_up() const;
+    void s1_shooting() const;                    // half-press (delegates to non-interactive)
+    void s1_shooting_non_interactive() const;    // half-press down, wait, up
+    bool af_shutter() const;                    // false if camera is in MF mode
+    bool toggle_movie_recording_direct();       // non-interactive movie rec toggle
+
+    // --- Contents / remote-transfer file browsing -------------------------
+    // Used only in ContentsTransfer / RemoteTransfer connection modes.
+    struct MtpFileEntry {
+        uint32_t handle;
+        std::string fileName;
+        uint64_t fileSize;
+        std::string date;   // "YYYYMMDDTHHMMSS"
+        uint32_t width;
+        uint32_t height;
+    };
+    struct MtpContentsListResult {
+        bool success = false;
+        std::string error_message;
+        std::vector<MtpFileEntry> files;
+    };
+    struct ContentsListResult {
+        bool success = false;
+        std::string error_message;
+        std::vector<SCRSDK::CrContentsInfo> contents;
+    };
+    struct FileDownloadResult {
+        bool success = false;
+        std::string error_message;
+        std::string message;
+        std::string filename;
+        int progress_percent = 0;
+    };
+
+    MtpContentsListResult list_contents_transfer_files();
+    ContentsListResult list_remote_transfer_contents(int slot_number);
+    FileDownloadResult download_contents_transfer_file(CrInt32u content_handle,
+                                                       const std::string& save_path);
+    FileDownloadResult download_remote_transfer_file(int slot_number, CrInt32u content_id,
+                                                     CrInt32u file_id,
+                                                     const std::string& save_path);
+
+    // --- Save-destination info (Remote Transfer mode) ---
+    bool set_save_info(const std::string& path, const std::string& prefix, int startNo,
+                       std::string* errorDetail = nullptr);
+    std::string get_save_info_path() const { return m_savePath; }
+    std::string get_save_info_prefix() const { return m_savePrefix; }
+    int get_save_info_start_no() const { return m_saveStartNo; }
+
+    // --- Camera settings file save/load ---
+    SCRSDK::CrError download_camera_settings(const std::string& filepath,
+                                             const std::string& filename);
+    SCRSDK::CrError upload_camera_settings(const std::string& filepath);
+    bool is_settings_save_supported();
+    bool is_settings_load_supported();
+
+    // --- Zoom ---
+    bool is_zoom_operation_supported();
+    SCRSDK::CrError execute_zoom_operation_direct(int8_t speed);  // -10..+10, 0=stop
+    uint32_t get_zoom_distance_mm();
+
+    // --- SCRSDK::IDeviceCallback (forward to SSE + correlate property changes) ---
+    void OnConnected(SCRSDK::DeviceConnectionVersioin version) override;
+    void OnDisconnected(CrInt32u error) override;
+    void OnPropertyChanged() override;
+    void OnLvPropertyChanged() override;
+    void OnCompleteDownload(CrChar* filename, CrInt32u type) override;
+    void OnWarning(CrInt32u warning) override;
+    void OnError(CrInt32u error) override;
+    void OnPropertyChangedCodes(CrInt32u num, CrInt32u* codes) override;
+    void OnLvPropertyChangedCodes(CrInt32u num, CrInt32u* codes) override;
+    void OnNotifyContentsTransfer(CrInt32u notify, SCRSDK::CrContentHandle handle,
+                                  CrChar* filename) override;
+    void OnNotifyRemoteTransferResult(CrInt32u notify, CrInt32u per, CrChar* filename) override;
+    void OnNotifyRemoteTransferResult(CrInt32u notify, CrInt32u per, CrInt8u* data,
+                                      CrInt64u size) override;
+    void OnNotifyRemoteTransferContentsListChanged(CrInt32u notify, CrInt32u slotNumber,
+                                                   CrInt32u addSize) override;
+
+    // --- Property-change callback correlation for bounded HTTP waits ---
+    // Register before the SDK set call; the OnPropertyChanged* callbacks fulfill
+    // the promise; caller unregisters on success/timeout/error.
+    void registerPropertyWait(CrInt32u propertyCode, std::promise<bool>* promise);
+    void clearPropertyWait();
+
+private:
+    // Internal SDK wrappers (replace stock CameraDevice private helpers).
+    void load_properties(CrInt32u num = 0, CrInt32u* codes = nullptr);
+    bool set_property(SCRSDK::CrDeviceProperty& prop) const;
+
+    // Release per-slot remote-transfer content lists.
+    void release_contents_info(int slotIndex);
+
+    // macOS V2.01 transfer-completion polling fallback.
+    void startTransferPolling();
+    void stopTransferPolling();
+    void transferPollLoop();
+
+    // Identity / connection
+    std::int32_t                 m_number;
+    SCRSDK::ICrCameraObjectInfo* m_info;
+    std::int64_t                 m_deviceHandle{0};
+    std::atomic<bool>            m_connected{false};
+    cli::ConnectionType          m_connType{};
+    SCRSDK::CrSdkControlMode     m_modeSDK{};
+
+    // Stock helper for parsing/formatting property values.
+    cli::PropertyValueTable      m_prop;
+
+    // SSE forwarding
+    SdkEventCallback             m_eventCallback;
+
+    // Property-change callback correlation
+    std::mutex                   m_propertyCallbackMutex;
+    CrInt32u                     m_propertyCallbackCode{0};
+    std::promise<bool>*          m_propertyCallbackPromise{nullptr};
+
+    // Save-destination info
+    std::string                  m_savePath;
+    std::string                  m_savePrefix;
+    int                          m_saveStartNo{1};
+
+    // Transfer polling workaround state
+    std::mutex                   m_pendingTransfersMtx;
+    std::vector<PendingTransfer> m_pendingTransfers;
+    std::thread                  m_transferPollThread;
+    std::atomic<bool>            m_transferPollRunning{false};
+
+    // Remote-transfer per-slot content lists (SDK-allocated; freed via
+    // release_contents_info) and the download-in-progress flag the transfer
+    // callbacks read.
+    SCRSDK::CrContentsInfo* m_contentsInfoList[2] = {nullptr, nullptr};
+    SCRSDK::CrCaptureDate*  m_captureDateList[2]  = {nullptr, nullptr};
+    bool                    m_getContentsDataStartFlg = false;
+};
+
+}  // namespace rest
+
+#endif  // CAMERA_DEVICE_REST_H
