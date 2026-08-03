@@ -91,6 +91,14 @@ static const std::map<std::string, PropertyMapping> PROPERTY_MAP = {
     // Thermal (read-only)
     {"overheating-state", PropertyMapping("overheating-state", SDK::CrDevicePropertyCode::CrDeviceProperty_DeviceOverheatingState, "", false)},
 
+    // Camera-settings file save/load gates (read-only). DownloadSettingFile and
+    // UploadSettingFile only run when the matching operation status is Enable
+    // and the save/read state is Idle; surfacing them turns "not supported or
+    // not enabled" into something a caller can actually diagnose.
+    {"camera-setting-save-enable", PropertyMapping("camera-setting-save-enable", SDK::CrDevicePropertyCode::CrDeviceProperty_CameraSetting_SaveOperationEnableStatus, "", false)},
+    {"camera-setting-read-enable", PropertyMapping("camera-setting-read-enable", SDK::CrDevicePropertyCode::CrDeviceProperty_CameraSetting_ReadOperationEnableStatus, "", false)},
+    {"camera-setting-save-read-state", PropertyMapping("camera-setting-save-read-state", SDK::CrDevicePropertyCode::CrDeviceProperty_CameraSetting_SaveRead_State, "", false)},
+
     // Error/Caution status (read-only)
     {"camera-error-caution-status", PropertyMapping("camera-error-caution-status", SDK::CrDevicePropertyCode::CrDeviceProperty_CameraErrorCautionStatus, "", false)},
     {"system-error-caution-status", PropertyMapping("system-error-caution-status", SDK::CrDevicePropertyCode::CrDeviceProperty_SystemErrorCautionStatus, "", false)},
@@ -4615,6 +4623,14 @@ std::string CameraWebController::getPropertyName(CrInt32u propertyCode) const {
         // Thermal
         case SDK::CrDevicePropertyCode::CrDeviceProperty_DeviceOverheatingState:
             return "overheating-state";
+
+        // Camera-settings file save/load gates
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_CameraSetting_SaveOperationEnableStatus:
+            return "camera-setting-save-enable";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_CameraSetting_ReadOperationEnableStatus:
+            return "camera-setting-read-enable";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_CameraSetting_SaveRead_State:
+            return "camera-setting-save-read-state";
 
         // Error/Caution status
         case SDK::CrDevicePropertyCode::CrDeviceProperty_CameraErrorCautionStatus:
