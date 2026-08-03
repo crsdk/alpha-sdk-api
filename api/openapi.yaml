@@ -369,6 +369,131 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/cameras/{cameraId}/af-area-position:
+    get:
+      operationId: getAFAreaPosition
+      x-fern-sdk-group-name: focus
+      x-fern-sdk-method-name: getAreaPosition
+      summary: Get the AF frame position
+      description: |
+        Return the camera's current autofocus frame(s) — position, size and focus
+        state — so a client can draw a focus box over a live view.
+
+        Each frame reports its centre three ways: `normalized` (0-1, the value to
+        use for overlays at any resolution), `position` (the same point in the
+        coordinate space `setAFAreaPosition` expects, so a read can be written
+        straight back), and `raw` (the camera's own numerator/denominator pair).
+        `size.normalized_width` / `normalized_height` give the box dimensions as a
+        fraction of the frame.
+
+        **More than one frame can be returned.** An expanding area reports the
+        main box plus its assist box — an ILCE-7M4 set to Tracking Expand Flexible
+        Spot returns a 38x38 `contrast-flexible-main` and a 76x76
+        `contrast-flexible-assist`. Draw them all.
+
+        `state` (`focused`, `not-focused`, `moving`, `selection`, …) is the value
+        to drive box colour from.
+
+        ## When this returns 400
+
+        The camera only reports a frame for focus areas that actually draw a box —
+        Flexible Spot, Expand Flexible Spot, Tracking variants. In Wide or a
+        face/eye-priority mode there is no movable frame and nothing is reported.
+        Live view should be streaming, since this reads a live-view property.
+      tags: [Actions]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: AF frame(s) retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AFAreaPositionResponse"
+        "400":
+          description: |
+            No AF frame available — usually a focus area with no movable box, or
+            live view not running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      operationId: setAFAreaPosition
+      x-fern-sdk-group-name: focus
+      x-fern-sdk-method-name: setAreaPosition
+      summary: Move the AF frame
+      description: |
+        Move the centre of the autofocus frame. Send either absolute coordinates
+        (`x` 0-639, `y` 0-479) or `normalized` 0-1 values — the latter is usually
+        what you want when translating a tap or click on a live view.
+
+        ## The camera clamps, and does not tell you
+
+        The usable area is smaller than the full range: it is inset from the edges
+        and varies by model, aspect ratio and AF setting. A request inside
+        0-639/0-479 is always accepted with `200`, then silently clamped.
+
+        Measured on an ILCE-7M4 with Tracking Expand Flexible Spot — every corner
+        was requested and every one was pulled inward, symmetrically:
+
+        | Requested | Landed |
+        |---|---|
+        | `0, 0` | `65, 61` |
+        | `639, 0` | `574, 61` |
+        | `639, 479` | `574, 418` |
+        | `0, 479` | `65, 418` |
+        | `320, 240` | `320, 240` |
+
+        That is a usable area of x `65-574`, y `61-418` — the middle 80% x 74% of
+        the coordinate space. Treat those numbers as illustrative, not a contract:
+        a different body, aspect ratio or AF area will inset differently.
+
+        A write is also ignored outright when the focus area has no movable box.
+        **Always follow up with `getAFAreaPosition` to see where the frame
+        actually is** rather than assuming the requested value took.
+
+        Requires priority key `pc-remote`.
+      tags: [Actions]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AFAreaPositionRequest"
+      responses:
+        "200":
+          description: |
+            Accepted by the camera. The frame may have been clamped — confirm with
+            `getAFAreaPosition`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: |
+            Missing or malformed body, coordinates out of range, or the camera
+            rejected the write.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/cameras/{cameraId}/priority-key:
     get:
       operationId: getPriorityKey
@@ -1987,6 +2112,108 @@ components:
         startNo:
           type: integer
           description: Starting file number
+
+    AFAreaPositionRequest:
+      type: object
+      description: |
+        Supply either `x` and `y`, or a `normalized` object. If both are present,
+        `normalized` wins.
+      properties:
+        x:
+          type: integer
+          minimum: 0
+          maximum: 639
+          description: Frame centre X in the camera's AF coordinate space.
+        y:
+          type: integer
+          minimum: 0
+          maximum: 479
+          description: Frame centre Y in the camera's AF coordinate space.
+        normalized:
+          type: object
+          description: |
+            Frame centre as 0-1 fractions of the live view — use this for a tap or
+            click position without converting to the SDK's coordinate space.
+          properties:
+            x:
+              type: number
+              minimum: 0
+              maximum: 1
+            y:
+              type: number
+              minimum: 0
+              maximum: 1
+
+    AFFrame:
+      type: object
+      description: A single autofocus frame as the camera reports it.
+      properties:
+        type:
+          type: string
+          description: |
+            Frame type, e.g. `contrast-flexible-main`, `contrast-flexible-assist`,
+            `phase-detection-image-sensor`, `wide`, `zone`, `central-emphasis`,
+            `contrast`, `frame-somewhere`, `unknown`.
+        state:
+          type: string
+          description: |
+            `focused`, `not-focused`, `moving`, `selection`, `registration-af`,
+            `island` or `unknown`. Drive the box colour from this.
+        priority:
+          type: integer
+        normalized:
+          type: object
+          description: Frame centre as 0-1 fractions — use this to place an overlay.
+          properties:
+            x: { type: number }
+            y: { type: number }
+        position:
+          type: object
+          description: |
+            The same centre in the coordinate space `setAFAreaPosition` accepts, so
+            a value read here can be written straight back.
+          properties:
+            x: { type: integer }
+            y: { type: integer }
+        size:
+          type: object
+          description: Box dimensions, raw and as a fraction of the frame.
+          properties:
+            width: { type: integer }
+            height: { type: integer }
+            normalized_width: { type: number }
+            normalized_height: { type: number }
+        raw:
+          type: object
+          description: The camera's own numerator/denominator pair, unconverted.
+          properties:
+            xNumerator: { type: integer }
+            xDenominator: { type: integer }
+            yNumerator: { type: integer }
+            yDenominator: { type: integer }
+
+    AFAreaPositionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            available:
+              type: boolean
+              description: Whether the camera reported a focus frame at all.
+            frame_count:
+              type: integer
+            frames:
+              type: array
+              description: |
+                One entry per frame. Expanding and tracking areas report a main
+                box plus an assist box — render every entry.
+              items:
+                $ref: "#/components/schemas/AFFrame"
 
     SettingsFileRequest:
       type: object
