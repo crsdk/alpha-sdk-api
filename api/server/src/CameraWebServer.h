@@ -136,9 +136,7 @@ private:
     void stopLiveViewBroadcasting();
     void liveViewBroadcastThread();
     
-    // API handlers. Prefer generic property/action handlers for new SDK
-    // features; add resource-specific handleApi* methods only when routing,
-    // request parsing, or response shape differs from the generic contract.
+    // API handlers
     HttpResponse handleApiStatus();
     HttpResponse handleApiConnect(const HttpRequest& request);
     HttpResponse handleApiDisconnect();
@@ -202,6 +200,7 @@ private:
     // SD Card file transfer
     HttpResponse handleApiListSDCardFiles(const std::string& cameraId, const std::string& slotNumber);
     HttpResponse handleApiDownloadSDCardFile(const std::string& cameraId, const std::string& slotNumber, const std::string& contentId, const std::string& fileId, const HttpRequest& request);
+    HttpResponse handleApiDownloadCompressed(const std::string& cameraId, const std::string& slotNumber, const std::string& contentId, const std::string& fileId, const std::string& type, const HttpRequest& request);
 
     // Per-camera live view handler
     HttpResponse handleApiLiveView(const std::string& cameraId, const std::string& action, const HttpRequest& request);
@@ -210,6 +209,7 @@ private:
     HttpResponse handleApiDownloadCameraSettings(const std::string& cameraId, const HttpRequest& request);
     HttpResponse handleApiUploadCameraSettings(const std::string& cameraId, const HttpRequest& request);
     HttpResponse handleApiListCameraSettings();
+    HttpResponse handleApiImportLUT(const std::string& cameraId, const HttpRequest& request);
 
     // Server management endpoints
     HttpResponse handleApiServerStatus();

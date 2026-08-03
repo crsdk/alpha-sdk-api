@@ -279,4 +279,62 @@ std::uint32_t parse_shutter_speed(const std::string& value) {
         "'. Valid formats: '1/125', '2s', 'bulb', or hex value from available_values (e.g., '0x0001007D')");
 }
 
+std::uint16_t parse_file_type(const std::string& value) {
+    std::string normalized = normalize_string(value);
+    std::replace(normalized.begin(), normalized.end(), '+', '-');
+
+    if (normalized == "none") return SDK::CrFileType_None;
+    if (normalized == "jpeg" || normalized == "jpg") return SDK::CrFileType_Jpeg;
+    if (normalized == "raw") return SDK::CrFileType_Raw;
+    if (normalized == "raw-jpeg" || normalized == "rawjpeg") return SDK::CrFileType_RawJpeg;
+    if (normalized == "raw-heif" || normalized == "rawheif") return SDK::CrFileType_RawHeif;
+    if (normalized == "heif") return SDK::CrFileType_Heif;
+
+    throw std::invalid_argument("Unknown file format: '" + value +
+                                "'. Valid values: 'jpeg', 'raw', 'raw+jpeg', 'raw+heif', 'heif'");
+}
+
+std::uint32_t parse_still_image_quality(const std::string& value) {
+    std::string normalized = normalize_string(value);
+    std::replace(normalized.begin(), normalized.end(), '+', '-');
+
+    auto parseQualityOnly = [](const std::string& qualityToken) -> std::uint16_t {
+        if (qualityToken == "light") return SDK::CrImageQuality_Light;
+        if (qualityToken == "standard") return SDK::CrImageQuality_Standard;
+        if (qualityToken == "fine") return SDK::CrImageQuality_Fine;
+        if (qualityToken == "extra-fine") return SDK::CrImageQuality_ExFine;
+        throw std::invalid_argument("");
+    };
+
+    try {
+        return parseQualityOnly(normalized);
+    } catch (const std::invalid_argument&) {
+    }
+
+    // File-type-qualified form, e.g. "raw+jpeg fine" -> (fileType << 16) | quality.
+    const std::pair<const char*, std::uint16_t> fileTypes[] = {
+        {"raw-jpeg-", SDK::CrFileType_RawJpeg},
+        {"raw-heif-", SDK::CrFileType_RawHeif},
+        {"jpeg-", SDK::CrFileType_Jpeg},
+        {"raw-", SDK::CrFileType_Raw},
+        {"heif-", SDK::CrFileType_Heif},
+    };
+
+    for (const auto& [prefix, fileType] : fileTypes) {
+        std::string prefixStr(prefix);
+        if (normalized.rfind(prefixStr, 0) == 0) {
+            std::string qualityToken = normalized.substr(prefixStr.size());
+            try {
+                std::uint16_t quality = parseQualityOnly(qualityToken);
+                return (static_cast<std::uint32_t>(fileType) << 16) | quality;
+            } catch (const std::invalid_argument&) {
+                break;
+            }
+        }
+    }
+
+    throw std::invalid_argument("Unknown image quality: '" + value +
+        "'. Valid values: 'light', 'standard', 'fine', 'extra fine', 'jpeg extra fine', 'raw+jpeg fine', etc.");
+}
+
 }  // namespace cli

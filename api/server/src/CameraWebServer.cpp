@@ -6,8 +6,8 @@
 #include <regex>
 #include <algorithm>
 #include <chrono>
-#include <cstdint>
 #include <errno.h>
+#include <cstdint>
 #include <json/json.h>
 #include <vector>
 
@@ -69,6 +69,28 @@ std::string base64_encode(const unsigned char* data, size_t len) {
 
 namespace cli {
 
+namespace {
+
+bool isPlaceholderCameraId(const std::string& cameraId) {
+    std::string normalized = cameraId;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return normalized.empty() ||
+           normalized == "{cameraid}" ||
+           normalized == "%7bcameraid%7d";
+}
+
+HttpResponse invalidCameraIdResponse() {
+    HttpResponse response;
+    response.statusCode = 400;
+    response.statusText = "Bad Request";
+    response.body = R"({"success": false, "message": "Camera ID is required in the URL path. Replace {cameraId} with a real camera ID from GET /api/cameras."})";
+    response.contentType = "application/json";
+    return response;
+}
+
+} // namespace
+
 CameraWebServer::CameraWebServer(int port)
     : m_port(port), m_serverSocket(-1), m_running(false), m_broadcastingLiveView(false),
       m_startTime(std::chrono::steady_clock::now())
@@ -129,9 +151,7 @@ bool CameraWebServer::start() {
         return false;
     }
 
-    // Wire SDK event flow: CameraDevice -> CameraWebController -> SSE clients.
-    // This callback must be cleared during controller shutdown before camera
-    // handles are disconnected.
+    // Wire SSE event callback: controller → server → SSE clients
     m_cameraController->setEventCallback(
         [this](const std::string& cameraId, const std::string& eventType, const std::string& jsonData) {
             sendSSEEvent(cameraId, eventType, jsonData);
@@ -367,8 +387,8 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
     }
 
     // ==================================================================================
-    // REST routes use exact regex matches and must stay before legacy substring
-    // routes below, otherwise broad legacy checks can steal new endpoints.
+    // NEW RESTFUL API ROUTES - Using regex matching to prevent route conflicts
+    // These routes are checked FIRST to ensure proper matching order
     // ==================================================================================
 
     std::smatch matches;
@@ -385,6 +405,9 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
     std::regex connectionPattern(R"(^/api/cameras/([^/]+)/connection$)");
     if (std::regex_match(request.path, matches, connectionPattern)) {
         std::string cameraId = matches[1];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         if (request.method == "POST") {
             return handleApiConnectCamera(cameraId, request);
         } else if (request.method == "DELETE") {
@@ -407,6 +430,9 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
     if (std::regex_match(request.path, matches, propertyPattern)) {
         std::string cameraId = matches[1];
         std::string propertyName = matches[2];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
 
         // Special case: /properties/all -> get all properties
         if (propertyName == "all" && request.method == "GET") {
@@ -433,6 +459,9 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
     if (std::regex_match(request.path, matches, actionPattern) && request.method == "POST") {
         std::string cameraId = matches[1];
         std::string actionName = matches[2];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiExecuteActionGeneric(cameraId, actionName, request);
     }
 
@@ -441,6 +470,9 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
     if (std::regex_match(request.path, matches, sdCardListPattern) && request.method == "GET") {
         std::string cameraId = matches[1];
         std::string slotNumber = matches[2];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiListSDCardFiles(cameraId, slotNumber);
     }
 
@@ -451,13 +483,34 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
         std::string slotNumber = matches[2];
         std::string contentId = matches[3];
         std::string fileId = matches[4];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiDownloadSDCardFile(cameraId, slotNumber, contentId, fileId, request);
+    }
+
+    // Pattern: POST /api/cameras/{cameraId}/sd-card/slot/{slotNumber}/files/{contentId}/{fileId}/thumbnail (download thumbnail)
+    // Pattern: POST /api/cameras/{cameraId}/sd-card/slot/{slotNumber}/files/{contentId}/{fileId}/screennail (download screennail)
+    std::regex sdCardCompressedPattern(R"(^/api/cameras/([^/]+)/sd-card/slot/([12])/files/(\d+)/(\d+)/(thumbnail|screennail)$)");
+    if (std::regex_match(request.path, matches, sdCardCompressedPattern) && request.method == "POST") {
+        std::string cameraId = matches[1];
+        std::string slotNumber = matches[2];
+        std::string contentId = matches[3];
+        std::string fileId = matches[4];
+        std::string type = matches[5];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
+        return handleApiDownloadCompressed(cameraId, slotNumber, contentId, fileId, type, request);
     }
 
     // Pattern: POST /api/cameras/{cameraId}/settings/download (save camera settings to PC)
     std::regex settingsDownloadPattern(R"(^/api/cameras/([^/]+)/settings/download$)");
     if (std::regex_match(request.path, matches, settingsDownloadPattern) && request.method == "POST") {
         std::string cameraId = matches[1];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiDownloadCameraSettings(cameraId, request);
     }
 
@@ -465,6 +518,9 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
     std::regex settingsUploadPattern(R"(^/api/cameras/([^/]+)/settings/upload$)");
     if (std::regex_match(request.path, matches, settingsUploadPattern) && request.method == "POST") {
         std::string cameraId = matches[1];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiUploadCameraSettings(cameraId, request);
     }
 
@@ -474,11 +530,24 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
         return handleApiListCameraSettings();
     }
 
+    // Pattern: POST /api/cameras/{cameraId}/lut/import (import .cube LUT file to camera)
+    std::regex lutImportPattern(R"(^/api/cameras/([^/]+)/lut/import$)");
+    if (std::regex_match(request.path, matches, lutImportPattern) && request.method == "POST") {
+        std::string cameraId = matches[1];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
+        return handleApiImportLUT(cameraId, request);
+    }
+
     // Pattern: /api/cameras/{cameraId}/live-view/{action}
     std::regex liveViewPattern(R"(^/api/cameras/([^/]+)/live-view/([^/]+)$)");
     if (std::regex_match(request.path, matches, liveViewPattern)) {
         std::string cameraId = matches[1];
         std::string action = matches[2];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiLiveView(cameraId, action, request);
     }
 
@@ -486,6 +555,9 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
     std::regex saveInfoPattern(R"(^/api/cameras/([^/]+)/settings/save-info$)");
     if (std::regex_match(request.path, matches, saveInfoPattern)) {
         std::string cameraId = matches[1];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         if (request.method == "GET") {
             return handleApiGetSaveDestination(cameraId);
         } else if (request.method == "PUT") {
@@ -512,66 +584,117 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
         return handleApiCameras();
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/iso/") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         size_t isoPos = request.path.find("/properties/iso/");
         std::string isoValue = request.path.substr(isoPos + 16); // Remove "/properties/iso/"
         return handleApiSetISO(cameraId, isoValue);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/aperture/") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         size_t aperturePos = request.path.find("/properties/aperture/");
         std::string apertureValue = request.path.substr(aperturePos + 21); // Remove "/properties/aperture/"
         return handleApiSetAperture(cameraId, apertureValue);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/shutter/") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         size_t shutterPos = request.path.find("/properties/shutter/");
         std::string shutterValue = request.path.substr(shutterPos + 20); // Remove "/properties/shutter/"
         return handleApiSetShutter(cameraId, shutterValue);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/wb/") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         size_t wbPos = request.path.find("/properties/wb/");
         std::string wbValue = request.path.substr(wbPos + 15); // Remove "/properties/wb/"
         return handleApiSetWhiteBalance(cameraId, wbValue);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/iso") != std::string::npos && request.path.back() != '/') {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiGetCurrentISO(cameraId);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/aperture") != std::string::npos && request.path.back() != '/') {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiGetCurrentAperture(cameraId);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/shutterspeed") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiGetCurrentShutterSpeed(cameraId);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/whitebalance") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiGetCurrentWhiteBalance(cameraId);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/focusmode") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiGetCurrentFocusMode(cameraId);
     }
     // New action endpoints
     else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/actions/half-press") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiS1Shooting(cameraId);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/actions/af-shutter") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiAfShutter(cameraId);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/actions/movie-rec") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiToggleMovieRec(cameraId);
     }
     // New property setters
     else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/exposure-mode") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiSetExposureMode(cameraId, request);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/drive-mode") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiSetDriveMode(cameraId, request);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/focus-mode") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiSetFocusMode(cameraId, request);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/properties/focus-area") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         return handleApiSetFocusArea(cameraId, request);
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/priority-key") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         if (request.method == "GET") {
             return handleApiGetPriorityKey(cameraId);
         } else if (request.method == "PUT") {
@@ -579,21 +702,23 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
         }
     } else if (request.path.find("/api/cameras/") != std::string::npos && request.path.find("/settings/save-destination") != std::string::npos) {
         std::string cameraId = extractCameraIdFromPath(request.path);
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
         if (request.method == "GET") {
             return handleApiGetSaveDestination(cameraId);
         } else if (request.method == "PUT") {
             return handleApiSetSaveDestination(cameraId, request);
         }
     }
-    // Root route: this public repo does not bundle a frontend app.
+    // Static file routes - serve React build files
     else if (request.path == "/" || request.path == "/index.html") {
-        HttpResponse response;
-        response.statusCode = 200;
-        response.contentType = "application/json";
-        response.body = R"({"success":true,"message":"Alpha Camera REST API server is running","docs":"https://crsdk.app/","apiBase":"/api"})";
-        return response;
+        std::cout << "DEBUG: Root request detected, serving index.html" << std::endl;
+        return handleStaticFile("index.html");
     } else if (request.path.find("/static/") == 0) {
-        return handleStaticFile(request.path.substr(1));
+        // Handle static assets (CSS, JS, etc.)
+        std::string filePath = request.path.substr(1); // Remove leading slash
+        return handleStaticFile(filePath);
     } else if (request.path == "/favicon.ico" ||
                request.path == "/manifest.json" ||
                request.path == "/robots.txt" ||
@@ -601,7 +726,9 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
                request.path == "/logo512.png" ||
                request.path == "/sony-logo.png" ||
                request.path == "/asset-manifest.json") {
-        return handleStaticFile(request.path.substr(1));
+        // Handle other React build assets
+        std::string filePath = request.path.substr(1); // Remove leading slash
+        return handleStaticFile(filePath);
     }
     // 404 Not Found
     else {
@@ -611,6 +738,11 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
         response.body = "<html><body><h1>404 - Page Not Found</h1></body></html>";
         return response;
     }
+
+    // Unreachable — satisfies MSVC C4715
+    HttpResponse fallback;
+    fallback.statusCode = 500;
+    return fallback;
 }
 
 HttpResponse CameraWebServer::handleApiStatus() {
@@ -705,11 +837,56 @@ HttpResponse CameraWebServer::handleApiCameras() {
 
 HttpResponse CameraWebServer::handleStaticFile(const std::string& path) {
     HttpResponse response;
-    response.statusCode = 404;
-    response.statusText = "Not Found";
-    response.contentType = "application/json";
-    response.body = R"({"success":false,"message":"Static frontend assets are not bundled with this server","docs":"https://crsdk.app/"})";
-    std::cout << "Static asset request not served by public API server: " << path << std::endl;
+
+    // Serve React build files from webapp/react/build/
+    std::string buildPath = "../react/build/" + path;
+
+    // Special case: if requesting root, serve index.html
+    if (path == "index.html" || path.empty()) {
+        buildPath = "../react/build/index.html";
+    }
+
+    std::cout << "handleStaticFile: requested path='" << path << "', buildPath='" << buildPath << "'" << std::endl;
+
+    std::ifstream file(buildPath, std::ios::binary);
+    if (file.is_open()) {
+        // Determine content type based on file extension
+        std::string ext = "";
+        size_t dotPos = path.find_last_of(".");
+        if (dotPos != std::string::npos) {
+            ext = path.substr(dotPos + 1);
+        }
+
+        if (ext == "html") {
+            response.contentType = "text/html";
+        } else if (ext == "css") {
+            response.contentType = "text/css";
+        } else if (ext == "js") {
+            response.contentType = "application/javascript";
+        } else if (ext == "json") {
+            response.contentType = "application/json";
+        } else if (ext == "png") {
+            response.contentType = "image/png";
+        } else if (ext == "ico") {
+            response.contentType = "image/x-icon";
+        } else {
+            response.contentType = "text/plain";
+        }
+
+        // Read file contents
+        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        response.body = content;
+        response.statusCode = 200;
+        response.statusText = "OK";
+
+        file.close();
+    } else {
+        // File not found
+        response.statusCode = 404;
+        response.statusText = "Not Found";
+        response.body = "<html><body><h1>404 - File Not Found</h1></body></html>";
+    }
+
     return response;
 }
 
@@ -720,7 +897,7 @@ std::string CameraWebServer::formatResponse(const HttpResponse& response) {
     oss << "Content-Length: " << response.body.length() << "\r\n";
     oss << "Access-Control-Allow-Origin: *\r\n";
     oss << "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n";
-    oss << "Access-Control-Allow-Headers: Content-Type, Accept\r\n";
+    oss << "Access-Control-Allow-Headers: *\r\n";
     oss << "Connection: close\r\n";
     oss << "\r\n";
     oss << response.body;
@@ -2342,6 +2519,76 @@ HttpResponse CameraWebServer::handleApiDownloadSDCardFile(
         root["message"] = result.message.empty() ? "Download started" : result.message;
         response.statusCode = 202; // Accepted — download is async
     } else {
+        std::string message = result.error_message;
+        if (message.find("0x00008D02") != std::string::npos) {
+            message = "Failed to start file download. Confirm the file identifiers are valid for the current connection mode and retry (SDK error 0x00008D02).";
+        }
+        root["message"] = message;
+        response.statusCode = 400;
+    }
+
+    response.body = root.toStyledString();
+    return response;
+}
+
+HttpResponse CameraWebServer::handleApiDownloadCompressed(
+    const std::string& cameraId,
+    const std::string& slotNumber,
+    const std::string& contentId,
+    const std::string& fileId,
+    const std::string& type,
+    const HttpRequest& request)
+{
+    HttpResponse response;
+    response.contentType = "application/json";
+
+    std::cout << "🖼️  Download " << type << ": POST /api/cameras/" << cameraId
+              << "/sd-card/slot/" << slotNumber << "/files/" << contentId << "/" << fileId << "/" << type << std::endl;
+
+    auto cameraDevice = m_cameraController->getCameraDevice(cameraId);
+    if (!cameraDevice) {
+        response.statusCode = 404;
+        response.body = R"({"success": false, "message": "Camera not found"})";
+        return response;
+    }
+
+    // Parse save path from request body (optional)
+    std::string savePath = "";
+    if (!request.body.empty()) {
+        try {
+            Json::Value root;
+            Json::CharReaderBuilder builder;
+            std::istringstream bodyStream(request.body);
+            std::string errs;
+            if (Json::parseFromStream(builder, bodyStream, &root, &errs)) {
+                if (root.isMember("save_path")) {
+                    savePath = root["save_path"].asString();
+                }
+            }
+        } catch (const std::exception& e) {
+            // Ignore parsing errors, use default path
+        }
+    }
+
+    int slot = std::stoi(slotNumber);
+    CrInt32u content = std::stoul(contentId);
+    CrInt32u file = std::stoul(fileId);
+
+    CameraDevice::FileDownloadResult result;
+    if (type == "thumbnail") {
+        result = cameraDevice->download_remote_transfer_thumbnail(slot, content, file, savePath);
+    } else {
+        result = cameraDevice->download_remote_transfer_screennail(slot, content, file, savePath);
+    }
+
+    Json::Value root;
+    root["success"] = result.success;
+
+    if (result.success) {
+        root["message"] = result.message.empty() ? (type + " download started") : result.message;
+        root["type"] = type;
+        response.statusCode = 202;
+    } else {
         root["message"] = result.error_message;
         response.statusCode = 400;
     }
@@ -2483,6 +2730,56 @@ HttpResponse CameraWebServer::handleApiListCameraSettings() {
     return response;
 }
 
+HttpResponse CameraWebServer::handleApiImportLUT(const std::string& cameraId, const HttpRequest& request) {
+    HttpResponse response;
+    response.contentType = "application/json";
+
+    std::cout << "🎨 API: Import LUT file for camera " << cameraId << std::endl;
+
+    // Parse JSON body for filePath and slot
+    std::string filePath;
+    int slot = 1;
+    if (!request.body.empty()) {
+        Json::Value root;
+        Json::CharReaderBuilder builder;
+        std::string errors;
+        std::istringstream bodyStream(request.body);
+        if (Json::parseFromStream(builder, bodyStream, &root, &errors)) {
+            if (root.isMember("filePath") && root["filePath"].isString()) {
+                filePath = root["filePath"].asString();
+            }
+            if (root.isMember("slot") && root["slot"].isInt()) {
+                slot = root["slot"].asInt();
+            }
+        }
+    }
+
+    if (filePath.empty()) {
+        Json::Value jsonResponse;
+        jsonResponse["success"] = false;
+        jsonResponse["message"] = "filePath is required in request body. Optionally provide slot (1-16, default: 1).";
+        response.statusCode = 400;
+        response.body = jsonResponse.toStyledString();
+        return response;
+    }
+
+    ApiResponse apiResponse = m_cameraController->importLUT(cameraId, filePath, slot);
+
+    Json::Value jsonResponse;
+    jsonResponse["success"] = apiResponse.success;
+    jsonResponse["message"] = apiResponse.message;
+    if (apiResponse.success) {
+        jsonResponse["data"]["slot"] = slot;
+        jsonResponse["data"]["file"] = filePath;
+        response.statusCode = 202; // Accepted — async operation
+    } else {
+        response.statusCode = 400;
+    }
+
+    response.body = jsonResponse.toStyledString();
+    return response;
+}
+
 // ==============================================================================
 // Server Management Endpoints
 // ==============================================================================
@@ -2554,7 +2851,7 @@ HttpResponse CameraWebServer::handleApiServerStatus() {
          << "  \"success\": true,\n"
          << "  \"server\": {\n"
          << "    \"version\": \"3.0.0\",\n"
-         << "    \"sdkVersion\": \"V1.14.00\",\n"
+         << "    \"sdkVersion\": \"V2.01.00\",\n"
          << "    \"uptime\": " << uptime << ",\n"
          << "    \"platform\": \"" << platform << "\"\n"
          << "  },\n"
@@ -2628,13 +2925,18 @@ HttpResponse CameraWebServer::handleApiServerShutdown() {
 
     addLog("info", "Graceful shutdown requested via API");
 
-    // Schedule shutdown on a separate thread so the response can be sent first
+    // Schedule shutdown on a separate thread so the response can be sent first.
+    // We deliberately do NOT call std::exit() here — that bypasses stack
+    // unwinding so the CameraWebServer/Controller destructors never run, and
+    // the SDK + camera handle leak (camera stays in a half-connected state
+    // until power-cycle). Setting m_running = false (via stop()) lets main()
+    // fall out of its `while (server.isRunning())` loop and return cleanly,
+    // which destroys the server, then the controller, then disconnects every
+    // attached camera through ~CameraWebController.
     std::thread([this]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         std::cout << "\n[Shutdown] Graceful shutdown requested via /api/server/shutdown\n";
         this->stop();
-        // Exit the process
-        std::exit(0);
     }).detach();
 
     return response;

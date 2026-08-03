@@ -27,6 +27,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <map>
 #include <functional>
 #include <future>
 #include <mutex>
@@ -55,6 +56,12 @@ struct PendingTransfer {
     std::string saveDir;                              // directory to poll
     std::set<std::string> preSnapshot;                // files present before download
     std::chrono::steady_clock::time_point startTime;
+    // The SDK creates the destination file when the transfer STARTS and streams
+    // into it, so "a new file appeared" does not mean "the transfer finished".
+    // Completion is only declared once the size stops changing between polls.
+    std::string   candidate;                          // new file seen, still growing
+    std::uintmax_t lastSize = 0;
+    int            stableTicks = 0;
 };
 
 class CameraDeviceRest : public SCRSDK::IDeviceCallback {
@@ -149,6 +156,21 @@ public:
     FileDownloadResult download_remote_transfer_file(int slot_number, CrInt32u content_id,
                                                      CrInt32u file_id,
                                                      const std::string& save_path);
+    // Compressed preview downloads (Remote Transfer mode): thumbnail (~50-60 KB)
+    // for fast ML triage, screennail (~250-300 KB) for detailed evaluation.
+    FileDownloadResult download_remote_transfer_thumbnail(int slot_number, CrInt32u content_id,
+                                                          CrInt32u file_id,
+                                                          const std::string& save_path);
+    FileDownloadResult download_remote_transfer_screennail(int slot_number, CrInt32u content_id,
+                                                           CrInt32u file_id,
+                                                           const std::string& save_path);
+
+    // --- Camera-supplied display strings (LUT / base-look names) ---
+    // Maps an SDK value to the camera's own display name for `type`. Results are
+    // cached per session: bodies that never fire the display-string callback would
+    // otherwise stall every bulk-properties call for the full timeout.
+    std::map<std::uint64_t, std::string> getDisplayStringNames(SCRSDK::CrDisplayStringType type,
+                                                               int timeoutMs = 3000);
 
     // --- Save-destination info (Remote Transfer mode) ---
     bool set_save_info(const std::string& path, const std::string& prefix, int startNo,
@@ -176,6 +198,8 @@ public:
     void OnLvPropertyChanged() override;
     void OnCompleteDownload(CrChar* filename, CrInt32u type) override;
     void OnWarning(CrInt32u warning) override;
+    void OnWarningExt(CrInt32u warning, CrInt32 param1, CrInt32 param2,
+                      CrInt32 param3) override;
     void OnError(CrInt32u error) override;
     void OnPropertyChangedCodes(CrInt32u num, CrInt32u* codes) override;
     void OnLvPropertyChangedCodes(CrInt32u num, CrInt32u* codes) override;
@@ -235,6 +259,11 @@ private:
     std::vector<PendingTransfer> m_pendingTransfers;
     std::thread                  m_transferPollThread;
     std::atomic<bool>            m_transferPollRunning{false};
+    // Set once the SDK's own OnNotifyRemoteTransferResult is seen. The polling
+    // fallback exists only for builds where that callback never fires; once it
+    // has fired we must never emit synthetic completions again, or clients get
+    // a premature percent:100 while the file is still being written.
+    std::atomic<bool>            m_realTransferCallbackSeen{false};
 
     // Remote-transfer per-slot content lists (SDK-allocated; freed via
     // release_contents_info) and the download-in-progress flag the transfer
@@ -242,6 +271,15 @@ private:
     SCRSDK::CrContentsInfo* m_contentsInfoList[2] = {nullptr, nullptr};
     SCRSDK::CrCaptureDate*  m_captureDateList[2]  = {nullptr, nullptr};
     bool                    m_getContentsDataStartFlg = false;
+
+    // Display-string list state. m_dispCameraKeyCV is signalled from OnWarning
+    // when the SDK reports RequestDisplayStringList success/error; the cache
+    // keeps bodies that never fire that callback from stalling every call.
+    std::mutex                                                    m_dispCameraKeyMutex;
+    std::condition_variable                                       m_dispCameraKeyCV;
+    std::mutex                                                    m_dispNameCacheMutex;
+    std::map<SCRSDK::CrDisplayStringType,
+             std::map<std::uint64_t, std::string>>                m_dispNameCache;
 };
 
 }  // namespace rest

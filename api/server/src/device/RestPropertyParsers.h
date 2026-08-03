@@ -38,9 +38,13 @@ std::uint16_t parse_white_balance(const std::string& value);
 std::uint16_t parse_focus_mode(const std::string& value);
 std::uint16_t parse_focus_area(const std::string& value);
 std::uint16_t parse_raw_file_compression(const std::string& value);
+std::uint16_t parse_file_type(const std::string& value);
 std::uint32_t parse_exposure_program_mode(const std::string& value);
 std::uint32_t parse_still_capture_mode(const std::string& value);
 std::uint32_t parse_shutter_speed(const std::string& value);
+// Accepts either a bare quality ("fine") or a file-type-qualified form
+// ("raw+jpeg fine"), returning (fileType << 16) | quality for the latter.
+std::uint32_t parse_still_image_quality(const std::string& value);
 
 }  // namespace cli
 

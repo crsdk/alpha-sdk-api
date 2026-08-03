@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Camera Remote SDK Web API
+  title: Alpha Camera REST API
   version: 3.0.0
   description: |
     RESTful control for Sony cameras — shooting, settings, live view with OSD overlay,
@@ -15,7 +15,7 @@ info:
     |------|-------------|
     | `remote` | Full camera control: shooting, settings, live view. Auto-transfer images to host PC. |
     | `remote-transfer` | Camera control + explicit SD card file access. Most capable mode. |
-    | `contents-transfer` | SD card file access only. No shooting or settings control. |
+    | `contents` | SD card file access only. No shooting or settings control. |
 
     ## Quick Start
 
@@ -31,13 +31,25 @@ info:
     The camera's priority key **must** be set to `pc-remote` before it accepts any
     remote property changes or shooting commands.
   license:
-    name: MIT
+    name: Proprietary
   contact:
     name: Camera Remote SDK
+    url: https://github.com/ocjlee888/camera-remote-sdk-project
 
 servers:
-  - url: http://localhost:8080
-    description: Local camera server
+  - url: http://{host}:{port}
+    description: |
+      Local camera server. The server binary runs on the host that has the
+      camera physically connected (USB or network). Defaults to
+      `http://localhost:8080`; override `host` and `port` when the server
+      runs on a different machine (e.g. a Raspberry Pi next to the camera).
+    variables:
+      host:
+        default: localhost
+        description: Host running the camera server binary
+      port:
+        default: "8080"
+        description: Port the camera server is listening on
 
 # No authentication — local server only
 security: []
@@ -57,8 +69,6 @@ tags:
     description: SD card file browsing and download
   - name: Settings
     description: Save path configuration and camera settings file management
-  - name: WebSocket
-    description: WebSocket live view streaming (binary JPEG frames)
   - name: Server
     description: Server health, status, and log retrieval
 
@@ -70,6 +80,8 @@ paths:
   /api/server/status:
     get:
       operationId: getServerStatus
+      x-fern-sdk-group-name: server
+      x-fern-sdk-method-name: status
       summary: Server health check
       description: |
         Returns server health, uptime, version info, and connected camera count.
@@ -82,10 +94,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ServerStatus"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/server/logs:
     get:
       operationId: getServerLogs
+      x-fern-sdk-group-name: server
+      x-fern-sdk-method-name: logs
       summary: Get recent server logs
       description: |
         Returns buffered server log output. Useful for debugging connection issues,
@@ -111,26 +131,17 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  logs:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/LogEntry"
-                  total:
-                    type: integer
-                    description: Total buffered log count
+                $ref: "#/components/schemas/ServerLogsResponse"
 
   /api/server/shutdown:
     post:
       operationId: shutdownServer
+      x-fern-sdk-group-name: server
+      x-fern-sdk-method-name: shutdown
       summary: Graceful server shutdown
       description: |
-        Initiates graceful shutdown: disconnects all cameras, closes SSE/WebSocket
-        connections, then exits. The TypeScript `ServerManager.stop()` calls this
-        before falling back to SIGTERM.
+        Initiates graceful shutdown: disconnects all cameras, closes SSE
+        connections, then exits.
       tags: [Server]
       responses:
         "200":
@@ -138,12 +149,13 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  message:
-                    type: string
+                $ref: "#/components/schemas/ShutdownServerResponse"
+        "500":
+          description: Shutdown failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # ============================================================
   # Connection
@@ -152,6 +164,8 @@ paths:
   /api/cameras:
     get:
       operationId: listCameras
+      x-fern-sdk-group-name: cameras
+      x-fern-sdk-method-name: list
       summary: List available cameras
       description: Enumerate all cameras connected via USB and network.
       tags: [Connection]
@@ -161,21 +175,19 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [success, cameras]
-                properties:
-                  success:
-                    type: boolean
-                  message:
-                    type: string
-                  cameras:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/CameraInfo"
+                $ref: "#/components/schemas/CameraListResponse"
+        "500":
+          description: SDK error during enumeration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/cameras/{cameraId}/connection:
     post:
       operationId: connectCamera
+      x-fern-sdk-group-name: cameras
+      x-fern-sdk-method-name: connect
       summary: Connect to camera
       description: Establish connection in the specified mode. Defaults to `remote` if no mode provided.
       tags: [Connection]
@@ -194,7 +206,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
         "400":
-          description: Connection failed
+          description: |
+            Connection request rejected. This includes invalid `mode` values,
+            no cameras discovered, target camera ID not present in the latest
+            enumeration, all cameras already connected, or an SDK connect
+            failure after a valid request.
           content:
             application/json:
               schema:
@@ -202,7 +218,13 @@ paths:
 
     get:
       operationId: getConnectionStatus
+      x-fern-sdk-group-name: cameras
+      x-fern-sdk-method-name: getConnectionStatus
       summary: Check connection status
+      description: |
+        Returns the current connection state for a camera (connected/disconnected,
+        model, id). When connected, `data.mode` reports the active SDK
+        connection mode (`remote` / `remote-transfer` / `contents`).
       tags: [Connection]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -212,11 +234,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CameraResponse"
+                $ref: "#/components/schemas/ConnectionStatusResponse"
 
     delete:
       operationId: disconnectCamera
+      x-fern-sdk-group-name: cameras
+      x-fern-sdk-method-name: disconnect
       summary: Disconnect camera
+      description: |
+        Cleanly disconnects from the specified camera. Server emits a synthetic
+        `disconnected` SSE event before clearing internal callbacks.
       tags: [Connection]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -227,6 +254,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
   # ============================================================
   # Properties
@@ -235,6 +264,8 @@ paths:
   /api/cameras/{cameraId}/properties/{propertyName}:
     get:
       operationId: getProperty
+      x-fern-sdk-group-name: properties
+      x-fern-sdk-method-name: get
       summary: Get a camera property
       description: |
         Returns the current value, human-readable format, writability flag, and all
@@ -249,19 +280,11 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [success, data]
-                properties:
-                  success:
-                    type: boolean
-                  message:
-                    type: string
-                  camera:
-                    $ref: "#/components/schemas/CameraSummary"
-                  data:
-                    $ref: "#/components/schemas/PropertyData"
+                $ref: "#/components/schemas/GetPropertyResponse"
         "400":
-          description: Invalid property name or camera not connected
+          description: |
+            Unknown property name, property getter not implemented, camera not
+            connected, or property retrieval failed inside the SDK.
           content:
             application/json:
               schema:
@@ -269,6 +292,8 @@ paths:
 
     put:
       operationId: setProperty
+      x-fern-sdk-group-name: properties
+      x-fern-sdk-method-name: set
       summary: Set a camera property
       description: |
         Set a camera property value. Accepts hex values (from GET response `available_values`)
@@ -294,7 +319,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
         "400":
-          description: Invalid value, property not writable, or camera not in pc-remote mode
+          description: |
+            Malformed request body, missing `value`, unknown property, invalid
+            value format, property not writable, camera not connected, or the
+            camera rejected the property set in its current state.
           content:
             application/json:
               schema:
@@ -303,8 +331,27 @@ paths:
   /api/cameras/{cameraId}/properties/all:
     get:
       operationId: getAllProperties
-      summary: Get all camera properties
-      description: Returns all mapped properties with their current formatted values.
+      x-fern-sdk-group-name: properties
+      x-fern-sdk-method-name: getAll
+      summary: Get all camera properties in one call
+      description: |
+        Returns every property the camera currently reports, deduplicated by name
+        (the SDK occasionally returns multiple internal entries for the same
+        property — the server picks the entry that has values or is writable).
+
+        ## Important: response shape differs from single-property GET
+
+        The per-property entries here use a DIFFERENT shape than
+        `getProperty` — see `BulkPropertyEntry` vs `PropertyData`. Highlights:
+
+        - Field names: `current_value` / `current_hex_value` / `current_formatted`
+          instead of `value` / `formatted`
+        - `writable` is a real boolean here (not the stringified `"true"`/`"false"`
+          you get from single GET)
+        - `available_values` entries carry both numeric `value` and `hex_value`
+
+        Use this endpoint for "load everything once" UI flows. Use single GET
+        when you need just one property and want the consistent setter format.
       tags: [Properties]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -314,30 +361,26 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [success]
-                properties:
-                  success:
-                    type: boolean
-                  message:
-                    type: string
-                  camera:
-                    $ref: "#/components/schemas/CameraSummary"
-                  properties:
-                    type: object
-                    additionalProperties:
-                      type: string
-                    description: Map of property names to formatted values
-                    example:
-                      iso: "400"
-                      aperture: "F5.6"
-                      shutter-speed: "1/250"
+                $ref: "#/components/schemas/GetAllPropertiesResponse"
+        "400":
+          description: Camera not connected or bulk property retrieval failed in the SDK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/cameras/{cameraId}/priority-key:
     get:
       operationId: getPriorityKey
+      x-fern-sdk-group-name: properties
+      x-fern-sdk-method-name: getPriorityKey
       summary: Get priority key setting
-      description: Returns the current priority key setting (pc-remote or camera-position).
+      description: |
+        Returns the current priority key setting (`pc-remote` or `camera-position`).
+
+        **Note**: FX3 / cinema bodies do not implement `PriorityKeySettings` —
+        GET returns empty data and SET returns SDK error `0x8402`. These bodies
+        auto-enter PC Remote mode on USB.
       tags: [Properties]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -347,24 +390,19 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [success, data]
-                properties:
-                  success:
-                    type: boolean
-                  message:
-                    type: string
-                  camera:
-                    $ref: "#/components/schemas/CameraSummary"
-                  data:
-                    $ref: "#/components/schemas/PriorityKeyData"
+                $ref: "#/components/schemas/GetPriorityKeyResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
     put:
       operationId: setPriorityKey
+      x-fern-sdk-group-name: properties
+      x-fern-sdk-method-name: setPriorityKey
       summary: Set priority key
       description: |
         Set the priority key. Must be `pc-remote` for the camera to accept remote
-        property changes and shooting commands.
+        property changes and shooting commands. Not supported on FX3 / cinema
+        bodies (returns 400).
       tags: [Properties]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -373,11 +411,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [setting]
-              properties:
-                setting:
-                  $ref: "#/components/schemas/PriorityKeySetting"
+              $ref: "#/components/schemas/SetPriorityKeyRequest"
       responses:
         "200":
           description: Priority key set
@@ -385,6 +419,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: |
+            Invalid request body or the camera rejected the priority-key change.
+            FX3 / cinema bodies may return SDK error `0x8402` because this
+            property is not implemented there.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # ============================================================
   # Actions
@@ -393,6 +436,8 @@ paths:
   /api/cameras/{cameraId}/actions/shutter:
     post:
       operationId: triggerShutter
+      x-fern-sdk-group-name: actions
+      x-fern-sdk-method-name: shutter
       summary: Take a photo
       description: |
         Single shot (no body or empty body), or continuous shooting with `down`/`up` control.
@@ -412,10 +457,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
   /api/cameras/{cameraId}/actions/half-press:
     post:
       operationId: halfPress
+      x-fern-sdk-group-name: actions
+      x-fern-sdk-method-name: halfPress
       summary: Focus lock (S1 half-press)
       description: Half-press the shutter button to lock autofocus. No body required.
       tags: [Actions]
@@ -428,10 +477,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
   /api/cameras/{cameraId}/actions/af-shutter:
     post:
       operationId: afShutter
+      x-fern-sdk-group-name: actions
+      x-fern-sdk-method-name: afShutter
       summary: Auto-focus + capture
       description: Autofocus then immediately capture in one operation. No body required.
       tags: [Actions]
@@ -444,10 +497,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: |
+            AF + shutter failed. Most common cause: camera is in Manual Focus
+            mode. Response `data.error` is `"focus_mode_not_af"`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/cameras/{cameraId}/actions/zoom:
     post:
       operationId: controlZoom
+      x-fern-sdk-group-name: actions
+      x-fern-sdk-method-name: zoom
       summary: Power zoom control
       description: Control power zoom lenses. Requires a power zoom lens to be attached.
       tags: [Actions]
@@ -466,10 +529,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
+
+  /api/cameras/{cameraId}/actions/movie-rec:
+    post:
+      operationId: toggleMovieRecording
+      x-fern-sdk-group-name: actions
+      x-fern-sdk-method-name: movieRec
+      summary: Toggle movie recording
+      description: |
+        Start or stop movie recording. Server tracks the current state via the SDK
+        and toggles it on each call. Camera must be in a movie shooting mode.
+      tags: [Actions]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Movie recording toggled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: Toggle failed (camera not in movie mode, not connected, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/cameras/{cameraId}/actions/focus-near-far:
     post:
       operationId: focusNearFar
+      x-fern-sdk-group-name: actions
+      x-fern-sdk-method-name: focusNearFar
       summary: Step-based focus adjustment
       description: |
         Move focus toward near or far in discrete steps.
@@ -491,6 +584,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: |
+            Invalid step value (must be -7..-1 or +1..+7), focus near/far disabled
+            on the lens, or the lens MF switch is in the wrong position.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # ============================================================
   # Live View & OSD
@@ -499,6 +600,8 @@ paths:
   /api/cameras/{cameraId}/live-view/enable:
     post:
       operationId: enableLiveView
+      x-fern-sdk-group-name: liveView
+      x-fern-sdk-method-name: enable
       summary: Enable live view on camera
       description: Sends the SDK `Setting_Key_EnableLiveView` command to the camera.
       tags: [Live View]
@@ -511,11 +614,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
   /api/cameras/{cameraId}/live-view/disable:
     post:
       operationId: disableLiveView
+      x-fern-sdk-group-name: liveView
+      x-fern-sdk-method-name: disable
       summary: Disable live view on camera
+      description: Sends the SDK `Setting_Key_DisableLiveView` command. Stops live view streaming if it was running.
       tags: [Live View]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -526,11 +634,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
   /api/cameras/{cameraId}/live-view/status:
     get:
       operationId: getLiveViewStatus
+      x-fern-sdk-group-name: liveView
+      x-fern-sdk-method-name: getStatus
       summary: Get live view status
+      description: |
+        Returns whether live view is `enabled` (camera setting) and whether
+        the server is currently `streaming` frames from the camera.
       tags: [Live View]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -540,21 +655,15 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [success, data]
-                properties:
-                  success:
-                    type: boolean
-                  message:
-                    type: string
-                  camera:
-                    $ref: "#/components/schemas/CameraSummary"
-                  data:
-                    $ref: "#/components/schemas/LiveViewStatus"
+                $ref: "#/components/schemas/GetLiveViewStatusResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
   /api/cameras/{cameraId}/live-view/start:
     post:
       operationId: startLiveViewStream
+      x-fern-sdk-group-name: liveView
+      x-fern-sdk-method-name: start
       summary: Start frame capture
       description: Starts the frame capture worker thread. Auto-enables live view if disabled.
       tags: [Live View]
@@ -567,11 +676,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
   /api/cameras/{cameraId}/live-view/stop:
     post:
       operationId: stopLiveViewStream
+      x-fern-sdk-group-name: liveView
+      x-fern-sdk-method-name: stop
       summary: Stop frame capture
+      description: Stops the frame capture worker thread. Live view itself remains enabled on the camera unless you also call `disableLiveView`.
       tags: [Live View]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -582,12 +696,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
   /api/cameras/{cameraId}/live-view/frame:
     get:
       operationId: getLiveViewFrame
+      x-fern-sdk-group-name: liveView
+      x-fern-sdk-method-name: getFrame
       summary: Get single JPEG frame
-      description: Returns the latest live view frame as a JPEG image. Streaming must be started first.
+      description: |
+        Returns the latest live view frame as a JPEG image. Streaming must be
+        started first via `liveView.start`. Poll this endpoint at ~15 fps
+        (every ~66 ms) to render a live preview.
       tags: [Live View]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -599,10 +720,18 @@ paths:
               schema:
                 type: string
                 format: binary
+        "404":
+          $ref: "#/components/responses/NoFrameAvailable"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/cameras/{cameraId}/live-view/osd-enable:
     post:
       operationId: enableOSD
+      x-fern-sdk-group-name: liveView
+      x-fern-sdk-method-name: enableOSD
       summary: Enable OSD overlay
       description: Enable On-Screen Display overlay via `CrDeviceProperty_OSDImageMode`.
       tags: [Live View]
@@ -615,11 +744,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
   /api/cameras/{cameraId}/live-view/osd-disable:
     post:
       operationId: disableOSD
+      x-fern-sdk-group-name: liveView
+      x-fern-sdk-method-name: disableOSD
       summary: Disable OSD overlay
+      description: Disables the camera's OSD overlay. Subsequent live view frames will not include UI overlays.
       tags: [Live View]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -630,11 +764,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
   /api/cameras/{cameraId}/live-view/osd-status:
     get:
       operationId: getOSDStatus
+      x-fern-sdk-group-name: liveView
+      x-fern-sdk-method-name: getOSDStatus
       summary: Get OSD status
+      description: Returns whether OSD is `supported` on this camera body and whether it is currently `enabled`.
       tags: [Live View]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -644,23 +783,20 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [success, data]
-                properties:
-                  success:
-                    type: boolean
-                  message:
-                    type: string
-                  camera:
-                    $ref: "#/components/schemas/CameraSummary"
-                  data:
-                    $ref: "#/components/schemas/OSDStatus"
+                $ref: "#/components/schemas/GetOSDStatusResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
   /api/cameras/{cameraId}/live-view/osd-frame:
     get:
       operationId: getOSDFrame
+      x-fern-sdk-group-name: liveView
+      x-fern-sdk-method-name: getOSDFrame
       summary: Get composited OSD frame
-      description: Returns a composited JPEG with live view image + camera UI overlay.
+      description: |
+        Returns a composited JPEG with live view image + camera UI overlay.
+        Same polling pattern as `liveView.getFrame` — OSD must be enabled
+        first via `liveView.enableOSD`.
       tags: [Live View]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -672,6 +808,14 @@ paths:
               schema:
                 type: string
                 format: binary
+        "404":
+          description: |
+            No OSD composite frame available. Ensure live view is streaming and
+            OSD is enabled. OSD is not supported on every body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # ============================================================
   # Events (SSE)
@@ -680,29 +824,60 @@ paths:
   /api/events:
     get:
       operationId: subscribeAllEvents
-      summary: Subscribe to all camera events
+      summary: Subscribe to all camera events (SSE)
+      x-fern-ignore: true
       description: |
-        Server-Sent Events stream for all connected cameras. Keepalive comment every 30s.
+        **SDK generation note:** marked `x-fern-ignore: true` because
+        Server-Sent Events don't map cleanly onto synchronous SDK methods.
+        The TypeScript and Swift SDKs ship hand-written SSE clients that
+        consume this endpoint and expose typed `EventStream` APIs.
+
+        ***
+
+        Server-Sent Events stream for all connected cameras. The server sends a
+        keepalive comment (`: keepalive`) every 30 seconds and immediately fires
+        an initial `connected` event with the subscription's camera ID payload
+        (see the quirk note below).
 
         ## Event Types
 
-        | Event | SDK Callback | Description |
-        |-------|-------------|-------------|
-        | `connected` | `OnConnected` | Camera connection established |
-        | `disconnected` | `OnDisconnected` | Camera disconnected |
-        | `propertyChanged` | `OnPropertyChangedCodes` | Property values changed |
-        | `warning` | `OnWarning` | Camera warning/notification (code `0x20011` = image captured) |
-        | `afStatus` | `OnWarningExt` | Autofocus state: `focused`, `unlocked`, `tracking` |
-        | `downloadComplete` | `OnCompleteDownload` | Auto-transferred image saved (remote mode only) |
-        | `transferProgress` | `OnNotifyRemoteTransferResult` | File pull completed (remote-transfer mode) |
-        | `error` | `OnError` | SDK error occurred |
+        | Event | SDK Callback | Payload | Description |
+        |-------|-------------|---------|-------------|
+        | `connected` | `OnConnected` (or initial handshake) | `{cameraId, ...}` | Camera connection established **OR** initial SSE handshake (see quirk) |
+        | `disconnected` | `OnDisconnected` | `{cameraId, reason?}` | Camera disconnected (real or synthetic — server emits one before clearing callbacks during a clean disconnect) |
+        | `propertyChanged` | `OnPropertyChangedCodes` | `{cameraId, codes: [...]}` | One or more property values changed on the camera |
+        | `afStatus` | `OnWarning` (`CrWarningExt_AFStatus`) | `{state: "focused" \| "unlocked" \| "tracking", source?}` | Autofocus state changed |
+        | `downloadComplete` | `OnCompleteDownload` | `{cameraId, filename, savedPath}` | Auto-transferred image saved to host (remote mode + matching `still-image-store-destination`) |
+        | `transferProgress` | `OnNotifyRemoteTransferResult` (or filesystem polling fallback) | `{cameraId, contentId, fileId, percent, savedPath?}` | Explicit file-pull progress (remote-transfer mode). On macOS V2.01 the SDK callback is unreliable; the server falls back to filesystem polling and emits synthetic events |
+        | `contentsTransfer` | `OnContentsTransfer` | `{cameraId, files: [...]}` | Contents-transfer mode file list update (printable-ASCII filenames only) |
+        | `operationResult` | `OnCompleteOperation` | `{cameraId, operation, result}` | Generic SDK operation completed (e.g. control codes, non-shutter commands) |
+        | `error` | `OnError` | `{cameraId, code, message}` | SDK error occurred |
+
+        ## ⚠ The dual `connected` event quirk
+
+        Two distinct conditions emit an event named `connected`:
+
+        1. **Initial SSE handshake** — fired immediately when the EventSource
+           connects, with payload `{"cameraId":"<subscription-id-or-*>"}`. Use
+           it to confirm the SSE channel is open. NOT a camera state change.
+        2. **Real camera connect** — fired when the SDK's `OnConnected`
+           callback fires for a camera, with the full camera info payload.
+
+        Discriminate by payload shape if you need to distinguish them. The
+        cleanest pattern is to ignore the first `connected` event after
+        opening the EventSource and treat any subsequent `connected` as a
+        real camera-state change.
 
         ## Example
 
         ```javascript
         const events = new EventSource("http://localhost:8080/api/events");
         events.addEventListener("downloadComplete", (e) => {
-          console.log("File saved:", JSON.parse(e.data).filename);
+          console.log("File saved:", JSON.parse(e.data).savedPath);
+        });
+        events.addEventListener("propertyChanged", (e) => {
+          const { codes } = JSON.parse(e.data);
+          // Refresh affected properties via getProperty / getAllProperties
         });
         ```
       tags: [Events]
@@ -713,19 +888,32 @@ paths:
             text/event-stream:
               schema:
                 type: string
-                description: Server-Sent Events stream
+                description: |
+                  Server-Sent Events stream. Each event uses the standard SSE
+                  framing: `event: <name>\\ndata: <json>\\n\\n`. See the
+                  description for the full event catalog and payload shapes.
 
   /api/cameras/{cameraId}/events:
     get:
       operationId: subscribeCameraEvents
-      summary: Subscribe to events for a specific camera
-      description: Same event types as the global endpoint, filtered to a single camera.
+      summary: Subscribe to events for a specific camera (SSE)
+      x-fern-ignore: true
+      description: |
+        **SDK generation note:** marked `x-fern-ignore: true` — see
+        `subscribeAllEvents` for rationale.
+
+        Same event catalog as `subscribeAllEvents`, filtered server-side to a
+        single camera ID. Useful when a single page only cares about one
+        camera and you want to avoid filtering on the client.
+
+        See `subscribeAllEvents` for the full event catalog, payload shapes,
+        and the dual-`connected` quirk.
       tags: [Events]
       parameters:
         - $ref: "#/components/parameters/cameraId"
       responses:
         "200":
-          description: SSE event stream for this camera
+          description: SSE event stream filtered to this camera
           content:
             text/event-stream:
               schema:
@@ -738,9 +926,12 @@ paths:
   /api/cameras/{cameraId}/sd-card/slot/{slotNumber}/files:
     get:
       operationId: listSDCardFiles
+      x-fern-sdk-group-name: sdCard
+      x-fern-sdk-method-name: list
       summary: List SD card files
       description: |
-        List files on the SD card. Requires `remote-transfer` or `contents-transfer` mode.
+        List files on the SD card. Requires `remote-transfer` or `contents` mode.
+        Returns 400 if called in `remote` mode.
       tags: [SD Card]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -751,64 +942,141 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [success]
-                properties:
-                  success:
-                    type: boolean
-                  slot:
-                    type: integer
-                  file_count:
-                    type: integer
-                  files:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/SDCardFile"
+                $ref: "#/components/schemas/SDCardFileListResponse"
+        "400":
+          $ref: "#/components/responses/WrongConnectionMode"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/cameras/{cameraId}/sd-card/slot/{slotNumber}/files/{contentId}/{fileId}/download:
     post:
       operationId: downloadSDCardFile
+      x-fern-sdk-group-name: sdCard
+      x-fern-sdk-method-name: download
       summary: Download file from SD card
-      description: Download a specific file from the SD card to the host PC.
+      description: |
+        Initiates an async download of a specific file from the SD card to the host PC.
+        Returns immediately; completion is signaled via the `downloadComplete` SSE event
+        (remote/remote-transfer modes) or via filesystem polling (contents-transfer mode).
       tags: [SD Card]
       parameters:
         - $ref: "#/components/parameters/cameraId"
         - $ref: "#/components/parameters/slotNumber"
-        - name: contentId
-          in: path
-          required: true
-          schema:
-            type: integer
-        - name: fileId
-          in: path
-          required: true
-          schema:
-            type: integer
+        - $ref: "#/components/parameters/contentId"
+        - $ref: "#/components/parameters/fileId"
       requestBody:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                save_path:
-                  type: string
-                  description: Directory path on host PC to save the file
+              $ref: "#/components/schemas/SDCardDownloadRequest"
       responses:
-        "200":
-          description: File downloaded
+        "202":
+          description: Download accepted (async)
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  filename:
-                    type: string
-                  progress:
-                    type: integer
-                  saved_path:
-                    type: string
+                $ref: "#/components/schemas/AsyncOperationResponse"
+        "400":
+          description: Download could not be started for the requested file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/cameras/{cameraId}/sd-card/slot/{slotNumber}/files/{contentId}/{fileId}/thumbnail:
+    post:
+      operationId: downloadSDCardThumbnail
+      x-fern-sdk-group-name: sdCard
+      x-fern-sdk-method-name: downloadThumbnail
+      summary: Download thumbnail (small JPEG preview)
+      description: |
+        Initiates an async download of the file's thumbnail (small JPEG preview).
+        Used for fast file browser previews. Remote-transfer mode only.
+      tags: [SD Card]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+        - $ref: "#/components/parameters/slotNumber"
+        - $ref: "#/components/parameters/contentId"
+        - $ref: "#/components/parameters/fileId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SDCardDownloadRequest"
+      responses:
+        "202":
+          description: Thumbnail download accepted (async)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompressedDownloadResponse"
+        "400":
+          description: Thumbnail download could not be started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/cameras/{cameraId}/sd-card/slot/{slotNumber}/files/{contentId}/{fileId}/screennail:
+    post:
+      operationId: downloadSDCardScreennail
+      x-fern-sdk-group-name: sdCard
+      x-fern-sdk-method-name: downloadScreennail
+      summary: Download screennail (medium JPEG preview)
+      description: |
+        Initiates an async download of the file's screennail (medium JPEG preview,
+        larger than thumbnail). Useful for ML evaluation and quality previews.
+        Remote-transfer mode only.
+      tags: [SD Card]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+        - $ref: "#/components/parameters/slotNumber"
+        - $ref: "#/components/parameters/contentId"
+        - $ref: "#/components/parameters/fileId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SDCardDownloadRequest"
+      responses:
+        "202":
+          description: Screennail download accepted (async)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompressedDownloadResponse"
+        "400":
+          description: Screennail download could not be started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # ============================================================
   # Settings
@@ -817,6 +1085,8 @@ paths:
   /api/cameras/{cameraId}/settings/save-info:
     get:
       operationId: getSaveInfo
+      x-fern-sdk-group-name: settings
+      x-fern-sdk-method-name: getSaveInfo
       summary: Get save path configuration
       description: Returns the current save directory, filename prefix, and start number for auto-transferred images.
       tags: [Settings]
@@ -828,20 +1098,14 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [success]
-                properties:
-                  success:
-                    type: boolean
-                  message:
-                    type: string
-                  camera:
-                    $ref: "#/components/schemas/CameraSummary"
-                  data:
-                    $ref: "#/components/schemas/SaveInfoData"
+                $ref: "#/components/schemas/GetSaveInfoResponse"
+        "400":
+          $ref: "#/components/responses/OperationRejected"
 
     put:
       operationId: setSaveInfo
+      x-fern-sdk-group-name: settings
+      x-fern-sdk-method-name: setSaveInfo
       summary: Set save path configuration
       description: Configure the save directory, filename prefix, and start number.
       tags: [Settings]
@@ -860,10 +1124,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: |
+            Malformed JSON body, missing required `path`, or the camera/server
+            rejected the save-info update.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/cameras/{cameraId}/settings/download:
     post:
       operationId: downloadCameraSettings
+      x-fern-sdk-group-name: settings
+      x-fern-sdk-method-name: download
       summary: Save camera settings to PC
       description: Download the camera's current settings to a file on the host PC.
       tags: [Settings]
@@ -881,10 +1155,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: Camera settings download failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/cameras/{cameraId}/settings/upload:
     post:
       operationId: uploadCameraSettings
+      x-fern-sdk-group-name: settings
+      x-fern-sdk-method-name: upload
       summary: Load settings to camera
       description: Upload a previously saved settings file back to the camera.
       tags: [Settings]
@@ -902,11 +1184,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: |
+            Missing filename in the request body or the settings upload failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/cameras/{cameraId}/settings/files:
     get:
       operationId: listSettingsFiles
+      x-fern-sdk-group-name: settings
+      x-fern-sdk-method-name: listFiles
       summary: List saved settings files
+      description: |
+        Lists camera settings files (`*.DAT`) previously saved to the host PC
+        via `downloadCameraSettings`. This is a host-side file listing; the
+        path currently includes `cameraId` for consistency with the rest of
+        the API, but the handler does not validate that camera.
       tags: [Settings]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -916,71 +1212,98 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  files:
-                    type: array
-                    items:
-                      type: string
+                $ref: "#/components/schemas/SettingsFileListResponse"
+        "400":
+          description: Host-side settings file listing failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
-  # ============================================================
-  # WebSocket
-  # ============================================================
-
-  /ws:
-    get:
-      operationId: liveViewWebSocket
-      summary: Live view WebSocket
+  /api/cameras/{cameraId}/lut/import:
+    post:
+      operationId: importLUT
+      x-fern-sdk-group-name: settings
+      x-fern-sdk-method-name: importLUT
+      summary: Import a .cube LUT file to the camera
       description: |
-        **WebSocket endpoint** — upgrade via standard HTTP `Connection: Upgrade` handshake.
-        Connect with `binaryType: 'arraybuffer'`.
-
-        Each binary message is a complete JPEG frame at ~15fps. Supports per-camera
-        streaming — multiple clients can stream from different cameras simultaneously.
-
-        ### Commands (send as JSON text)
-
-        **Start live view:**
-        ```json
-        {"action": "start_liveview", "cameraId": "D10F60149B0C"}
-        ```
-
-        **Stop live view:**
-        ```json
-        {"action": "stop_liveview"}
-        ```
-
-        ### Client Example
-
-        ```javascript
-        const ws = new WebSocket('ws://localhost:8080/ws');
-        ws.binaryType = 'arraybuffer';
-
-        ws.onopen = () => {
-          ws.send(JSON.stringify({
-            action: 'start_liveview',
-            cameraId: 'D10F60149B0C'
-          }));
-        };
-
-        ws.onmessage = (event) => {
-          const blob = new Blob([event.data], { type: 'image/jpeg' });
-          document.getElementById('liveView').src = URL.createObjectURL(blob);
-        };
-        ```
-      tags: [WebSocket]
-      x-websocket: true
+        Initiates an async import of a `.cube` LUT file from the host filesystem
+        into one of the camera's user LUT slots (1–16). CineEI / cinema bodies only.
+      tags: [Settings]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LUTImportRequest"
       responses:
-        "101":
-          description: WebSocket upgrade — binary JPEG frames at ~15fps
+        "202":
+          description: LUT import accepted (async)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LUTImportResponse"
+        "400":
+          description: Invalid request (missing filePath, slot out of range, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
 # ============================================================
 # Components
 # ============================================================
 
 components:
+  responses:
+    RequestValidationError:
+      description: |
+        Invalid request body or parameter shape. Use this when the JSON payload
+        is malformed, a required field is missing, or a parameter cannot be
+        parsed before any camera operation is attempted.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    OperationRejected:
+      description: |
+        The request was syntactically valid, but the camera or server rejected
+        it due to connection state, unsupported capability, property
+        writability, current shooting mode, or another runtime precondition.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    WrongConnectionMode:
+      description: |
+        The endpoint is valid, but not in the camera's current connection
+        mode. Reconnect using the documented mode for this operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NoFrameAvailable:
+      description: |
+        No frame is currently available. This usually means streaming has not
+        been started yet, no frame has been captured yet, or OSD/composite
+        prerequisites are not satisfied.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NotFound:
+      description: Camera, file, or resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
   parameters:
     cameraId:
       name: cameraId
@@ -1006,6 +1329,22 @@ components:
       schema:
         type: integer
         enum: [1, 2]
+
+    contentId:
+      name: contentId
+      in: path
+      required: true
+      description: SDK content identifier from `listSDCardFiles` response
+      schema:
+        type: integer
+
+    fileId:
+      name: fileId
+      in: path
+      required: true
+      description: SDK file identifier from `listSDCardFiles` response (always `0` in contents-transfer mode)
+      schema:
+        type: integer
 
   schemas:
     # --- Camera objects ---
@@ -1033,15 +1372,24 @@ components:
       properties:
         connected:
           type: boolean
+          example: false
         model:
           type: string
+          example: ILCE-7M4
         id:
           type: string
+          example: D06CE05E3323
 
     # --- Standard responses ---
 
     CameraResponse:
       type: object
+      description: |
+        Generic envelope returned by most camera operations. The shape of
+        `data` varies per endpoint — most operations return an empty or
+        null `data`; operations that return structured data document a
+        specific shape. SDK-generated types can treat `data` as an opaque
+        map for generic endpoints.
       required: [success]
       properties:
         success:
@@ -1054,15 +1402,174 @@ components:
           type: object
           additionalProperties: true
 
+    # --- Hoisted response envelopes (named for clean SDK typing) ---
+
+    ConnectionStatusResponse:
+      type: object
+      description: |
+        Response envelope for `GET /api/cameras/{id}/connection`. When the
+        camera is connected, `data.mode` reports the active SDK connection
+        mode (`remote` / `remote-transfer` / `contents`) so clients don't
+        have to remember what they passed at connect time. When the camera
+        is not connected, `data` is omitted.
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        camera:
+          $ref: "#/components/schemas/CameraSummary"
+        data:
+          type: object
+          properties:
+            mode:
+              $ref: "#/components/schemas/ConnectionMode"
+
+    CameraListResponse:
+      type: object
+      required: [success, cameras]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        cameras:
+          type: array
+          items:
+            $ref: "#/components/schemas/CameraInfo"
+
+    GetPropertyResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        camera:
+          $ref: "#/components/schemas/CameraSummary"
+        data:
+          $ref: "#/components/schemas/PropertyData"
+
+    GetAllPropertiesResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        camera:
+          $ref: "#/components/schemas/CameraSummary"
+        data:
+          $ref: "#/components/schemas/BulkPropertiesData"
+
+    GetPriorityKeyResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        camera:
+          $ref: "#/components/schemas/CameraSummary"
+        data:
+          $ref: "#/components/schemas/PriorityKeyData"
+
+    GetLiveViewStatusResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        camera:
+          $ref: "#/components/schemas/CameraSummary"
+        data:
+          $ref: "#/components/schemas/LiveViewStatus"
+
+    GetOSDStatusResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        camera:
+          $ref: "#/components/schemas/CameraSummary"
+        data:
+          $ref: "#/components/schemas/OSDStatus"
+
+    GetSaveInfoResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        camera:
+          $ref: "#/components/schemas/CameraSummary"
+        data:
+          $ref: "#/components/schemas/SaveInfoData"
+
+    ServerLogsResponse:
+      type: object
+      required: [success, logs]
+      properties:
+        success:
+          type: boolean
+        logs:
+          type: array
+          items:
+            $ref: "#/components/schemas/LogEntry"
+        total:
+          type: integer
+          description: Total buffered log count
+
+    ShutdownServerResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+
+    SetPriorityKeyRequest:
+      type: object
+      required: [setting]
+      properties:
+        setting:
+          $ref: "#/components/schemas/PriorityKeySetting"
+
     ErrorResponse:
       type: object
+      description: |
+        Standard non-2xx response envelope. The API does not currently expose a
+        stable machine-readable error code in the JSON body, so clients should
+        branch on HTTP status first and then inspect `message` for the
+        human-readable reason.
+      example:
+        success: false
+        message: Camera not connected
+        camera:
+          connected: false
+          model: ILCE-7M4
+          id: D06CE05E3323
       required: [success, message]
       properties:
         success:
           type: boolean
           const: false
+          example: false
         message:
           type: string
+          example: Camera not connected
         camera:
           $ref: "#/components/schemas/CameraSummary"
 
@@ -1070,30 +1577,41 @@ components:
 
     PropertyData:
       type: object
-      description: Property value with metadata and available options
+      description: |
+        Single-property GET payload returned under `data` by
+        `GET /api/cameras/{id}/properties/{name}`.
       required: [property, value, formatted, writable]
       properties:
         property:
           type: string
+          description: REST property name (matches `PropertyName` enum)
         value:
           type: string
-          description: Hex-encoded current value
+          description: Hex-encoded current value (use this in SET requests)
           example: "0x1007d"
         formatted:
           type: string
-          description: Human-readable display value
+          description: Human-readable display value (also accepted by SET)
           example: "1/125"
         writable:
-          type: string
-          enum: ["true", "false"]
-          description: Whether the property can be set in current mode
+          type: boolean
+          description: Whether this property is currently writable.
         available_values:
           type: array
           items:
             $ref: "#/components/schemas/AvailableValue"
+          description: |
+            Values the camera currently accepts. Empty array for properties
+            with no enumerated values (range properties, freeform strings).
+          x-fern-property-name: availableValues
 
     AvailableValue:
       type: object
+      description: |
+        Single entry inside the `available_values` array returned by single-GET
+        property responses. Contains only the hex value (as a string) and the
+        formatted label — no separate numeric value field. The bulk endpoint
+        uses `BulkAvailableValue`, which is a different shape.
       required: [value, formatted]
       properties:
         value:
@@ -1104,6 +1622,89 @@ components:
           type: string
           description: Human-readable label
           example: "1/8000"
+
+    BulkPropertyEntry:
+      type: object
+      description: |
+        Per-property entry inside the `data.properties` map returned by
+        `GET /api/cameras/{id}/properties/all`. Note that this schema is NOT
+        the same as `PropertyData`:
+
+        - Field names are prefixed with `current_` (`current_value`,
+          `current_hex_value`, `current_formatted`)
+        - `writable` is a real JSON boolean, not a stringified one
+        - Each entry in `available_values` includes BOTH a numeric `value`
+          and a `hex_value` string
+
+        This is because the bulk handler serializes property data inline rather
+        than going through the string-string `data` map.
+      required: [current_value, current_hex_value, current_formatted, writable, available_values]
+      properties:
+        current_value:
+          type: number
+          format: double
+          description: |
+            Numeric SDK value. Typed as `number` (rather than `int64`) because
+            some properties (e.g. `exposure-compensation`, `image-id-num`) emit
+            UInt64-range values on the wire that don't fit in a signed 64-bit
+            integer. Treat this field as opaque — use `current_hex_value` in
+            SET requests.
+          example: 100
+          x-fern-property-name: currentValue
+        current_hex_value:
+          type: string
+          example: "0x1007d"
+          x-fern-property-name: currentHexValue
+        current_formatted:
+          type: string
+          example: "1/125"
+          x-fern-property-name: currentFormatted
+        writable:
+          type: boolean
+        available_values:
+          type: array
+          items:
+            $ref: "#/components/schemas/BulkAvailableValue"
+          x-fern-property-name: availableValues
+
+    BulkAvailableValue:
+      type: object
+      required: [value, hex_value, formatted]
+      properties:
+        value:
+          type: number
+          format: double
+          description: |
+            Numeric SDK value. Typed as `number` (rather than `int64`) because
+            some properties emit UInt64-range values on the wire that don't fit
+            in a signed 64-bit integer. Treat this field as opaque — use
+            `hex_value` in SET requests.
+          example: 32000
+        hex_value:
+          type: string
+          example: "0x11f40"
+          x-fern-property-name: hexValue
+        formatted:
+          type: string
+          example: "1/8000"
+
+    BulkPropertiesData:
+      type: object
+      description: |
+        Wrapper object inside the bulk-GET `data` field. The
+        `properties` member is a map of property name → entry.
+      required: [properties, total_properties]
+      properties:
+        properties:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/BulkPropertyEntry"
+          description: Map of property name (matches `PropertyName`) to its current value entry
+        total_properties:
+          type: integer
+          description: |
+            Total number of property entries the camera reported (BEFORE deduplication).
+          x-fern-property-name: totalProperties
 
     PriorityKeyData:
       type: object
@@ -1117,21 +1718,21 @@ components:
       type: object
       properties:
         enabled:
-          type: string
-          enum: ["true", "false"]
+          type: boolean
+          description: Whether live view is enabled on the camera body.
         streaming:
-          type: string
-          enum: ["true", "false"]
+          type: boolean
+          description: Whether the server is currently capturing frames.
 
     OSDStatus:
       type: object
       properties:
         supported:
-          type: string
-          enum: ["true", "false"]
+          type: boolean
+          description: Whether the connected camera body supports OSD composite frames.
         enabled:
-          type: string
-          enum: ["true", "false"]
+          type: boolean
+          description: Whether OSD mode is currently enabled.
 
     SaveInfoData:
       type: object
@@ -1141,21 +1742,109 @@ components:
         prefix:
           type: string
         startNo:
-          type: string
+          type: integer
+          description: Starting file number.
 
     SDCardFile:
       type: object
+      required: [content_id, file_id, file_path, file_size]
       properties:
         content_id:
           type: integer
+          description: SDK content handle for use in download requests
+          x-fern-property-name: contentId
         file_id:
           type: integer
+          description: |
+            SDK file handle. Always `0` in contents-transfer mode (one file per content).
+            Multi-file content (e.g. RAW+JPEG pair) returns separate entries with the
+            same `content_id` and distinct `file_id` values.
+          x-fern-property-name: fileId
         file_path:
           type: string
           example: "DCIM/100MSDCF/DSC00001.ARW"
+          x-fern-property-name: filePath
         file_size:
           type: integer
+          format: int64
           description: File size in bytes
+          x-fern-property-name: fileSize
+        width:
+          type: integer
+          description: Image width in pixels (contents-transfer mode only)
+        height:
+          type: integer
+          description: Image height in pixels (contents-transfer mode only)
+        creation_year:
+          type: integer
+          x-fern-property-name: creationYear
+        creation_month:
+          type: integer
+          x-fern-property-name: creationMonth
+        creation_day:
+          type: integer
+          x-fern-property-name: creationDay
+        creation_hour:
+          type: integer
+          x-fern-property-name: creationHour
+        creation_minute:
+          type: integer
+          x-fern-property-name: creationMinute
+        creation_second:
+          type: integer
+          x-fern-property-name: creationSecond
+
+    SDCardFileListResponse:
+      type: object
+      required: [success, slot, file_count, files]
+      properties:
+        success:
+          type: boolean
+        slot:
+          type: integer
+        file_count:
+          type: integer
+          x-fern-property-name: fileCount
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/SDCardFile"
+
+    SDCardDownloadRequest:
+      type: object
+      description: Optional save path override. If omitted, uses the connection-time `SetSaveInfo` path.
+      properties:
+        save_path:
+          type: string
+          description: Directory path on host PC to save the file
+          example: "/Users/me/Pictures/captures"
+          x-fern-property-name: savePath
+
+    AsyncOperationResponse:
+      type: object
+      description: |
+        Generic envelope for async operations that have been accepted but not yet completed.
+        Watch for the corresponding SSE event (`downloadComplete`, `transferProgress`) to
+        learn when the operation finishes.
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+
+    CompressedDownloadResponse:
+      type: object
+      description: Response envelope for thumbnail/screennail downloads.
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        type:
+          type: string
+          enum: [thumbnail, screennail]
 
     # --- Request schemas ---
 
@@ -1196,7 +1885,26 @@ components:
             Omit for single shot.
 
     ZoomRequest:
+      description: |
+        Power zoom command. The server accepts two forms:
+
+        - **Direction + speed preset** (`ZoomDirectionalRequest`):
+          `{ "direction": "in" | "out", "speed": "normal" | "fast" }`.
+        - **Signed speed** (`ZoomSignedSpeedRequest`):
+          `{ "speed": -10..+10 }`. Negative = zoom out, positive = zoom in,
+          magnitude = speed. `0` stops the zoom.
+
+        The two forms are disjoint on the `speed` field's JSON type, so
+        generated SDKs may either expose them as an untagged union or
+        surface one method per form (see `x-fern-sdk-method-name` on the
+        endpoint).
+      oneOf:
+        - $ref: "#/components/schemas/ZoomDirectionalRequest"
+        - $ref: "#/components/schemas/ZoomSignedSpeedRequest"
+
+    ZoomDirectionalRequest:
       type: object
+      description: Direction + named speed preset.
       required: [direction, speed]
       properties:
         direction:
@@ -1205,6 +1913,18 @@ components:
         speed:
           type: string
           enum: [normal, fast]
+
+    ZoomSignedSpeedRequest:
+      type: object
+      description: |
+        Signed speed in range `-10..+10`. Positive = zoom in, negative =
+        zoom out, magnitude = speed. `0` stops an in-progress zoom.
+      required: [speed]
+      properties:
+        speed:
+          type: integer
+          minimum: -10
+          maximum: 10
 
     FocusNearFarRequest:
       type: object
@@ -1237,33 +1957,85 @@ components:
           type: string
           description: Settings filename (e.g. `CUMSET.DAT`)
 
+    SettingsFileListResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        files:
+          type: array
+          items:
+            type: string
+        count:
+          type: integer
+
+    LUTImportRequest:
+      type: object
+      required: [filePath]
+      properties:
+        filePath:
+          type: string
+          description: Absolute or working-directory-relative path to a `.cube` file on the host
+          example: "/Users/me/luts/example.cube"
+        slot:
+          type: integer
+          minimum: 1
+          maximum: 16
+          default: 1
+          description: Camera user LUT slot to import into
+
+    LUTImportResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            slot:
+              type: integer
+            file:
+              type: string
+
     # --- Server schemas ---
 
     ServerStatus:
       type: object
+      required: [success, server, cameras]
       properties:
         success:
           type: boolean
         server:
           type: object
+          required: [version, sdkVersion, uptime, platform]
           properties:
             version:
               type: string
-              description: API version
+              description: |
+                Server binary version (hardcoded in `handleApiServerStatus`).
+                Distinct from the OpenAPI spec version in `info.version`.
               example: "3.0.0"
             sdkVersion:
               type: string
-              description: Sony Camera Remote SDK version
-              example: "V1.14.00"
+              description: Sony Camera Remote SDK version embedded at build time
+              example: "V2.01.00"
             uptime:
               type: integer
               description: Server uptime in seconds
             platform:
               type: string
-              description: Host OS platform
+              description: Host OS platform identifier
+              enum: [darwin-arm64, darwin-x64, linux-arm64, linux-arm, linux-x64, win32-x64, unknown]
               example: "darwin-arm64"
         cameras:
           type: object
+          required: [connected, discovered]
           properties:
             connected:
               type: integer
@@ -1291,41 +2063,180 @@ components:
 
     ConnectionMode:
       type: string
-      enum: [remote, remote-transfer, contents-transfer]
+      enum: [remote, remote-transfer, contents]
       description: |
-        - `remote` — Full control + auto-transfer
-        - `remote-transfer` — Full control + explicit SD card access
-        - `contents-transfer` — SD card access only
+        - `remote` — Full control + auto-transfer of captured images to host PC
+        - `remote-transfer` — Full control + explicit SD card file access
+        - `contents` — SD card file access only (no shooting or settings control)
 
     PropertyName:
       type: string
+      description: |
+        Canonical REST property names. Mirrors the server's `PROPERTY_MAP`
+        (`webapp/server/src/CameraWebController.cpp`). Use `GET /properties/all`
+        to see the full set with current values, writability, and accepted ranges
+        for the connected camera.
+
+        Some properties are read-only on every body (status / state fields).
+        Others are read-only depending on shooting mode (e.g. `aperture` is
+        read-only outside Manual / Aperture-priority modes). Always check the
+        `writable` field on a single GET before attempting a SET.
+
+        ## Property tiers
+
+        **Core (R/W):** `iso`, `aperture`, `shutter-speed`, `drive-mode`,
+        `white-balance`, `focus-mode`, `exposure-program-mode`,
+        `still-image-store-destination`
+
+        **Image format:** `file-format`, `image-quality`, `raw-compression`
+
+        **Focus:** `focus-area`, `focus-distance` (read), `focus-position`,
+        `focus-position-current` (read), `focus-driving-status` (read)
+
+        **Zoom:** `zoom-distance` (read), `zoom-setting`
+
+        **Battery / power:** `battery-remain` (read)
+
+        **Video state / format:** `recording-state` (read), `movie-file-format`,
+        `movie-recording-setting`, `movie-recording-frame-rate`
+
+        **Thermal / errors:** `overheating-state` (read),
+        `camera-error-caution-status` (read), `system-error-caution-status` (read),
+        `camera-system-error-info` (read)
+
+        **Media slots:** `media-slot1-status`, `media-slot1-remaining-photos`,
+        `media-slot1-remaining-time`, `media-slot2-status`,
+        `media-slot2-remaining-photos`, `media-slot2-remaining-time` (all read)
+
+        **Exposure:** `exposure-compensation`, `metering-mode`, `ae-lock`,
+        `exposure-step`
+
+        **Flash:** `flash-mode`, `flash-compensation`, `wireless-flash`
+
+        **Shutter / silent:** `shutter-type`, `shutter-mode`, `silent-mode`,
+        `shutter-angle`
+
+        **Image:** `image-size`, `aspect-ratio`, `color-space`, `dro`, `high-iso-nr`
+
+        **WB fine-tune:** `awb-lock`, `white-balance-color-temp`
+
+        **Creative / picture profile:** `creative-look`, `flicker-less-shooting`,
+        `picture-profile`, `pp-lut-base-look`
+
+        **Audio:** `audio-recording`, `audio-input-master-level`
+
+        **Timecode:** `timecode-preset`, `timecode-format`, `timecode-run`,
+        `timecode-make`
+
+        **Stabilization / NR:** `image-stabilization`, `movie-stabilization`,
+        `long-exposure-nr`
+
+        **CineEI / LUT:** `movie-shooting-mode`, `movie-shooting-mode-color-gamut`,
+        `base-look-import-enable`, `embed-lut-file`, `base-look-value`,
+        `shooting-enable`, `exposure-index`, `base-iso`, `aps-c-s35`
+
+        **Image ID (MakerNote):** `image-id-string`, `image-id-string-max-length`,
+        `image-id-num`, `image-id-num-setting`
+
+        **Priority:** `priority-key` (also exposed as `/priority-key` resource)
       enum:
+        # Core
+        - priority-key
         - iso
         - aperture
         - shutter-speed
-        - exposure-program-mode
-        - focus-mode
-        - focus-area
-        - white-balance
         - drive-mode
+        - white-balance
+        - focus-mode
+        - exposure-program-mode
+        - still-image-store-destination
+        # Image format
         - file-format
         - image-quality
         - raw-compression
-        - still-image-store-destination
+        # Focus
+        - focus-area
+        - focus-distance
         - focus-position
         - focus-position-current
         - focus-driving-status
-        - focus-distance
+        # Zoom
         - zoom-distance
-      description: |
-        Supported property names. Use `GET /properties/all` to see all properties.
-
-        **Read/Write:** iso, aperture, shutter-speed, focus-mode, focus-area,
-        white-balance, drive-mode, file-format, image-quality, raw-compression,
-        still-image-store-destination, focus-position
-
-        **Read-only:** exposure-program-mode (dial-controlled), focus-position-current,
-        focus-driving-status, focus-distance, zoom-distance
+        - zoom-setting
+        # Battery
+        - battery-remain
+        # Video state / format
+        - recording-state
+        - movie-file-format
+        - movie-recording-setting
+        - movie-recording-frame-rate
+        # Thermal / errors
+        - overheating-state
+        - camera-error-caution-status
+        - system-error-caution-status
+        - camera-system-error-info
+        # Media slots
+        - media-slot1-status
+        - media-slot1-remaining-photos
+        - media-slot1-remaining-time
+        - media-slot2-status
+        - media-slot2-remaining-photos
+        - media-slot2-remaining-time
+        # Exposure
+        - exposure-compensation
+        - metering-mode
+        - ae-lock
+        - exposure-step
+        # Flash
+        - flash-mode
+        - flash-compensation
+        - wireless-flash
+        # Shutter / silent
+        - shutter-type
+        - shutter-mode
+        - silent-mode
+        - shutter-angle
+        # Image
+        - image-size
+        - aspect-ratio
+        - color-space
+        - dro
+        - high-iso-nr
+        # White balance fine-tune
+        - awb-lock
+        - white-balance-color-temp
+        # Creative / picture profile
+        - creative-look
+        - flicker-less-shooting
+        - picture-profile
+        - pp-lut-base-look
+        # Audio
+        - audio-recording
+        - audio-input-master-level
+        # Timecode
+        - timecode-preset
+        - timecode-format
+        - timecode-run
+        - timecode-make
+        # Stabilization / NR
+        - image-stabilization
+        - movie-stabilization
+        - long-exposure-nr
+        # CineEI / LUT
+        - movie-shooting-mode
+        - movie-shooting-mode-color-gamut
+        - base-look-import-enable
+        - embed-lut-file
+        - base-look-value
+        - shooting-enable
+        - exposure-index
+        - base-iso
+        - aps-c-s35
+        # Image ID (MakerNote)
+        - image-id-string
+        - image-id-string-max-length
+        - image-id-num
+        - image-id-num-setting
 
     PriorityKeySetting:
       type: string

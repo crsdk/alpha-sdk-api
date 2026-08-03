@@ -32,6 +32,10 @@ Use the hosted docs for detailed REST API, SDK package, npm install, and example
 
 Sony SDK files are not distributed in this repository. See [docs/SDK_SETUP.md](docs/SDK_SETUP.md) for the expected folder layout and extraction instructions.
 
+## Binaries
+
+Prebuilt binaries ship with the npm package — see the [SDK overview](https://crsdk.app/sdk/overview). To build your own for an unpublished platform, a different SDK version, or local changes, see [docs/BUILDING_BINARIES.md](docs/BUILDING_BINARIES.md).
+
 ## Contributing
 
 Start with [CONTRIBUTING.md](CONTRIBUTING.md). For adding missing SDK features, use [docs/ADDING_SDK_APIS.md](docs/ADDING_SDK_APIS.md).

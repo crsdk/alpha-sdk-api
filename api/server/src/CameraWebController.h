@@ -100,8 +100,8 @@ struct PropertyData {
     PropertyData() : currentValue(0), writable(false) {}
 };
 
-// REST property name -> SDK property code. Add entries here only after
-// confirming PropertyValueTable can parse/format the SDK value shape.
+// RESTful API Mapping Structures
+// Property mapping: REST property name -> SDK property code and method info
 struct PropertyMapping {
     std::string restName;           // REST API name (e.g., "iso", "aperture")
     CrInt32u sdkPropertyCode;       // SDK property code (e.g., CrDeviceProperty_IsoSensitivity)
@@ -113,9 +113,7 @@ struct PropertyMapping {
         : restName(rest), sdkPropertyCode(code), sdkMethodName(method), hasCustomMethod(custom) {}
 };
 
-// REST action name -> SDK command or custom CameraDevice method. Use custom
-// methods for operations that require multi-step SDK calls, bounded waits, or
-// CLI-free variants of sample-app methods.
+// Action mapping: REST action name -> SDK command info
 struct ActionMapping {
     std::string restName;           // REST API name (e.g., "shutter", "half-press")
     CrInt32u sdkCommandId;          // SDK command ID (e.g., CrCommandId_Release)
@@ -243,9 +241,18 @@ public:
     ApiResponse uploadCameraSettings(const std::string& cameraId, const std::string& filename);
     ApiResponse listSavedSettings();
 
+    // LUT import
+    ApiResponse importLUT(const std::string& cameraId, const std::string& filePath, int slotNumber);
+
     // Zoom control operations
     ApiResponse executeZoomAction(const std::string& cameraId, int speed);
     ApiResponse getZoomDistance(const std::string& cameraId);
+
+    // Image ID (MakerNote) handlers
+    ApiResponse getImageIdString(const std::string& cameraId);
+    ApiResponse setImageIdString(const std::string& cameraId, const std::string& value);
+    ApiResponse getImageIdNum(const std::string& cameraId);
+    ApiResponse setImageIdNum(const std::string& cameraId, const std::string& value);
 
     // RESTful Generic Handlers (Scalable to 800+ properties/actions)
     ApiResponse getPropertyGeneric(const std::string& cameraId, const std::string& propertyName);
@@ -264,6 +271,16 @@ public:
     PropertyData getPropertyData(std::shared_ptr<CameraDevice> camera,
                                 const std::string& propertyName,
                                 CrInt32u propertyCode);
+
+    // Overload: Extract property data from an already-fetched CrDeviceProperty (no SDK call)
+    PropertyData getPropertyDataFromBulk(std::shared_ptr<CameraDevice> camera,
+                                         const std::string& propertyName,
+                                         const SCRSDK::CrDeviceProperty& property);
+
+    // Helper: Format property data (shared by getPropertyData and getPropertyDataFromBulk)
+    void formatPropertyData(PropertyData& data, std::shared_ptr<CameraDevice> camera,
+                           const std::string& propertyName,
+                           const unsigned char* values, int valueSize);
 
     // Helper: Build ApiResponse from PropertyData
     ApiResponse buildPropertyResponse(const PropertyData& propertyData,
@@ -320,10 +337,7 @@ private:
     std::vector<std::shared_ptr<CameraDevice>> m_availableCameras;
     ConnectionMode m_currentConnectionMode;
 
-    // Per-camera workers serialize SDK access for connected cameras. HTTP
-    // handlers should route camera operations through these workers unless the
-    // operation is explicitly read-only and already protected by controller
-    // locks.
+    // New multi-camera thread management
     std::map<std::string, std::unique_ptr<CameraThreadPair>> m_cameraThreads;
     std::map<std::string, ConnectionMode> m_connectedModes;  // Per-camera connection mode tracking
     std::mutex m_cameraThreadsMutex;
@@ -356,9 +370,7 @@ private:
     std::atomic<bool> m_disconnectInProgress;
 
 
-    // Callback correlation for bounded HTTP waits. Keep the listener lifecycle
-    // tight: register before the SDK call, unregister on success, timeout, and
-    // all error paths.
+    // Callback correlation system
     std::unordered_map<std::string, std::unique_ptr<CallbackListener>> m_callbackListeners;
     std::mutex m_callbackMutex;
 

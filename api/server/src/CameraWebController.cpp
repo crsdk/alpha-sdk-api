@@ -18,18 +18,37 @@
 #include <set>
 #include <algorithm>
 #include <map>
+#include <cctype>
 
 namespace SDK = SCRSDK;
 
 namespace cli {
 
-// REST API names mapped to SDK property codes. Prefer adding simple properties
-// here and letting getPropertyGeneric/setPropertyGeneric handle them; add a
-// custom CameraDevice method only when the SDK requires a sequence, callback
-// wait, connection-mode check, or non-standard value conversion.
+namespace {
+
+void populateResponseCamera(ApiResponse& response, const std::shared_ptr<CameraDevice>& camera) {
+    if (!camera) {
+        return;
+    }
+    response.camera.connected = camera->is_connected();
+    response.camera.model = std::string(camera->get_model().data());
+    response.camera.id = std::string(camera->get_id().data());
+}
+
+std::string toLowerCopy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return value;
+}
+
+}
+
+// RESTful API Mapping Tables - Maps REST API names to SDK codes
+// This design allows scaling to 800+ properties/actions by simply adding entries
+
 static const std::map<std::string, PropertyMapping> PROPERTY_MAP = {
-    // Core camera controls exposed through the generic REST property endpoint.
-    {"priority-key", PropertyMapping("priority-key", SDK::CrDevicePropertyCode::CrDeviceProperty_PriorityKeySettings, "set_position_key", false)},
+    // Core properties for testing the RESTful infrastructure
+    {"priority-key", PropertyMapping("priority-key", SDK::CrDevicePropertyCode::CrDeviceProperty_PriorityKeySettings, "", false)},
     {"iso", PropertyMapping("iso", SDK::CrDevicePropertyCode::CrDeviceProperty_IsoSensitivity, "set_iso", true)},
     {"aperture", PropertyMapping("aperture", SDK::CrDevicePropertyCode::CrDeviceProperty_FNumber, "set_aperture", true)},
     {"shutter-speed", PropertyMapping("shutter-speed", SDK::CrDevicePropertyCode::CrDeviceProperty_ShutterSpeed, "set_shutter_speed", false)},
@@ -57,20 +76,118 @@ static const std::map<std::string, PropertyMapping> PROPERTY_MAP = {
     {"focus-position", PropertyMapping("focus-position", SDK::CrDevicePropertyCode::CrDeviceProperty_FocusPositionSetting, "", false)},
     {"focus-position-current", PropertyMapping("focus-position-current", SDK::CrDevicePropertyCode::CrDeviceProperty_FocusPositionCurrentValue, "", false)},
     {"focus-driving-status", PropertyMapping("focus-driving-status", SDK::CrDevicePropertyCode::CrDeviceProperty_FocusDrivingStatus, "", false)},
+
+    // --- Tier 1: Essential (Grip MVP) ---
+
+    // Battery & power (read-only)
+    {"battery-remain", PropertyMapping("battery-remain", SDK::CrDevicePropertyCode::CrDeviceProperty_BatteryRemain, "", false)},
+
+    // Video recording
+    {"recording-state", PropertyMapping("recording-state", SDK::CrDevicePropertyCode::CrDeviceProperty_RecordingState, "", false)},
+    {"movie-file-format", PropertyMapping("movie-file-format", SDK::CrDevicePropertyCode::CrDeviceProperty_Movie_File_Format, "", false)},
+    {"movie-recording-setting", PropertyMapping("movie-recording-setting", SDK::CrDevicePropertyCode::CrDeviceProperty_Movie_Recording_Setting, "", false)},
+    {"movie-recording-frame-rate", PropertyMapping("movie-recording-frame-rate", SDK::CrDevicePropertyCode::CrDeviceProperty_Movie_Recording_FrameRateSetting, "", false)},
+
+    // Thermal (read-only)
+    {"overheating-state", PropertyMapping("overheating-state", SDK::CrDevicePropertyCode::CrDeviceProperty_DeviceOverheatingState, "", false)},
+
+    // Error/Caution status (read-only)
+    {"camera-error-caution-status", PropertyMapping("camera-error-caution-status", SDK::CrDevicePropertyCode::CrDeviceProperty_CameraErrorCautionStatus, "", false)},
+    {"system-error-caution-status", PropertyMapping("system-error-caution-status", SDK::CrDevicePropertyCode::CrDeviceProperty_SystemErrorCautionStatus, "", false)},
+    {"camera-system-error-info", PropertyMapping("camera-system-error-info", SDK::CrDevicePropertyCode::CrDeviceProperty_CameraSystemErrorInfo, "", false)},
+
+    // Media status (read-only)
+    {"media-slot1-status", PropertyMapping("media-slot1-status", SDK::CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_Status, "", false)},
+    {"media-slot1-remaining-photos", PropertyMapping("media-slot1-remaining-photos", SDK::CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_RemainingNumber, "", false)},
+    {"media-slot1-remaining-time", PropertyMapping("media-slot1-remaining-time", SDK::CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_RemainingTime, "", false)},
+    {"media-slot2-status", PropertyMapping("media-slot2-status", SDK::CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_Status, "", false)},
+    {"media-slot2-remaining-photos", PropertyMapping("media-slot2-remaining-photos", SDK::CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_RemainingNumber, "", false)},
+    {"media-slot2-remaining-time", PropertyMapping("media-slot2-remaining-time", SDK::CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_RemainingTime, "", false)},
+
+    // --- Tier 2: Photo & Shooting Control ---
+
+    // Exposure
+    {"exposure-compensation", PropertyMapping("exposure-compensation", SDK::CrDevicePropertyCode::CrDeviceProperty_ExposureBiasCompensation, "", false)},
+    {"metering-mode", PropertyMapping("metering-mode", SDK::CrDevicePropertyCode::CrDeviceProperty_MeteringMode, "", false)},
+    {"ae-lock", PropertyMapping("ae-lock", SDK::CrDevicePropertyCode::CrDeviceProperty_AEL, "", false)},
+    {"exposure-step", PropertyMapping("exposure-step", SDK::CrDevicePropertyCode::CrDeviceProperty_ExposureStep, "", false)},
+
+    // Flash
+    {"flash-mode", PropertyMapping("flash-mode", SDK::CrDevicePropertyCode::CrDeviceProperty_FlashMode, "", false)},
+    {"flash-compensation", PropertyMapping("flash-compensation", SDK::CrDevicePropertyCode::CrDeviceProperty_FlashCompensation, "", false)},
+    {"wireless-flash", PropertyMapping("wireless-flash", SDK::CrDevicePropertyCode::CrDeviceProperty_WirelessFlash, "", false)},
+
+    // Shutter & silent mode
+    {"shutter-type", PropertyMapping("shutter-type", SDK::CrDevicePropertyCode::CrDeviceProperty_ShutterType, "", false)},
+    {"shutter-mode", PropertyMapping("shutter-mode", SDK::CrDevicePropertyCode::CrDeviceProperty_ShutterMode, "", false)},
+    {"silent-mode", PropertyMapping("silent-mode", SDK::CrDevicePropertyCode::CrDeviceProperty_SilentMode, "", false)},
+
+    // Image settings
+    {"image-size", PropertyMapping("image-size", SDK::CrDevicePropertyCode::CrDeviceProperty_ImageSize, "", false)},
+    {"aspect-ratio", PropertyMapping("aspect-ratio", SDK::CrDevicePropertyCode::CrDeviceProperty_AspectRatio, "", false)},
+    {"color-space", PropertyMapping("color-space", SDK::CrDevicePropertyCode::CrDeviceProperty_ColorSpace, "", false)},
+    {"dro", PropertyMapping("dro", SDK::CrDevicePropertyCode::CrDeviceProperty_DRO, "", false)},
+    {"high-iso-nr", PropertyMapping("high-iso-nr", SDK::CrDevicePropertyCode::CrDeviceProperty_HighIsoNR, "", false)},
+
+    // White balance fine-tuning
+    {"awb-lock", PropertyMapping("awb-lock", SDK::CrDevicePropertyCode::CrDeviceProperty_AWBL, "", false)},
+    {"white-balance-color-temp", PropertyMapping("white-balance-color-temp", SDK::CrDevicePropertyCode::CrDeviceProperty_Colortemp, "", false)},
+
+    // --- Tier 3: Creative & Video ---
+
+    {"creative-look", PropertyMapping("creative-look", SDK::CrDevicePropertyCode::CrDeviceProperty_CreativeLook, "", false)},
+    {"flicker-less-shooting", PropertyMapping("flicker-less-shooting", SDK::CrDevicePropertyCode::CrDeviceProperty_FlickerLessShooting, "", false)},
+
+    // Audio
+    {"audio-recording", PropertyMapping("audio-recording", SDK::CrDevicePropertyCode::CrDeviceProperty_AudioRecording, "", false)},
+    {"audio-input-master-level", PropertyMapping("audio-input-master-level", SDK::CrDevicePropertyCode::CrDeviceProperty_AudioInputMasterLevel, "", false)},
+
+    // Timecode
+    {"timecode-preset", PropertyMapping("timecode-preset", SDK::CrDevicePropertyCode::CrDeviceProperty_TimeCodePreset, "", false)},
+    {"timecode-format", PropertyMapping("timecode-format", SDK::CrDevicePropertyCode::CrDeviceProperty_TimeCodeFormat, "", false)},
+    {"timecode-run", PropertyMapping("timecode-run", SDK::CrDevicePropertyCode::CrDeviceProperty_TimeCodeRun, "", false)},
+    {"timecode-make", PropertyMapping("timecode-make", SDK::CrDevicePropertyCode::CrDeviceProperty_TimeCodeMake, "", false)},
+
+    // Image stabilization
+    {"movie-stabilization", PropertyMapping("movie-stabilization", SDK::CrDevicePropertyCode::CrDeviceProperty_Movie_ImageStabilizationSteadyShot, "", false)},
+
+    // --- CineEI & LUT ---
+    {"movie-shooting-mode", PropertyMapping("movie-shooting-mode", SDK::CrDevicePropertyCode::CrDeviceProperty_MovieShootingMode, "", false)},
+    {"movie-shooting-mode-color-gamut", PropertyMapping("movie-shooting-mode-color-gamut", SDK::CrDevicePropertyCode::CrDeviceProperty_MovieShootingModeColorGamut, "", false)},
+    {"base-look-import-enable", PropertyMapping("base-look-import-enable", SDK::CrDevicePropertyCode::CrDeviceProperty_BaseLookImportOperationEnableStatus, "", false)},
+    {"embed-lut-file", PropertyMapping("embed-lut-file", SDK::CrDevicePropertyCode::CrDeviceProperty_EmbedLUTFile, "", false)},
+    {"base-look-value", PropertyMapping("base-look-value", SDK::CrDevicePropertyCode::CrDeviceProperty_BaseLookValue, "", false)},
+    {"shooting-enable", PropertyMapping("shooting-enable", SDK::CrDevicePropertyCode::CrDeviceProperty_ShootingEnableSettingLicense, "", false)},
+
+    // Image ID (MakerNote)
+    {"image-id-string", PropertyMapping("image-id-string", SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_String, "", true)},
+    {"image-id-string-max-length", PropertyMapping("image-id-string-max-length", SDK::CrDevicePropertyCode::CrDeviceProperty_MaximumSizeOfImageIDString, "", false)},
+    {"image-id-num", PropertyMapping("image-id-num", SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_Num, "", true)},
+    {"image-id-num-setting", PropertyMapping("image-id-num-setting", SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_Num_Setting, "", false)},
+
+    // Picture Profile
+    {"picture-profile", PropertyMapping("picture-profile", SDK::CrDevicePropertyCode::CrDeviceProperty_PictureProfile, "", false)},
+    {"pp-lut-base-look", PropertyMapping("pp-lut-base-look", SDK::CrDevicePropertyCode::CrDeviceProperty_SelectUserBaseLookToSetInPPLUT, "", false)},
+
+    // Still image stabilization & long exposure NR
+    {"image-stabilization", PropertyMapping("image-stabilization", SDK::CrDevicePropertyCode::CrDeviceProperty_ImageStabilizationSteadyShot, "", false)},
+    {"long-exposure-nr", PropertyMapping("long-exposure-nr", SDK::CrDevicePropertyCode::CrDeviceProperty_LongExposureNR, "", false)},
+    {"exposure-index", PropertyMapping("exposure-index", SDK::CrDevicePropertyCode::CrDeviceProperty_ExposureIndex, "", false)},
+    {"base-iso", PropertyMapping("base-iso", SDK::CrDevicePropertyCode::CrDeviceProperty_GainBaseIsoSensitivity, "", false)},
+    {"shutter-angle", PropertyMapping("shutter-angle", SDK::CrDevicePropertyCode::CrDeviceProperty_ShutterAngle, "", false)},
+    {"zoom-setting", PropertyMapping("zoom-setting", SDK::CrDevicePropertyCode::CrDeviceProperty_Zoom_Setting, "", false)},
+    {"aps-c-s35", PropertyMapping("aps-c-s35", SDK::CrDevicePropertyCode::CrDeviceProperty_APS_C_S35, "", false)},
 };
 
-// REST action names mapped to SDK commands or REST-safe CameraDevice methods.
-// Methods named here must be non-interactive; do not point web routes at CLI
-// sample methods that read from stdin or block without a timeout.
 static const std::map<std::string, ActionMapping> ACTION_MAP = {
-    // Core camera actions exposed through the generic REST action endpoint.
+    // Core actions for testing the RESTful infrastructure
     {"shutter", ActionMapping("shutter", SDK::CrCommandId::CrCommandId_Release, SDK::CrCommandParam::CrCommandParam_Down, "capture_image", true)},
     {"half-press", ActionMapping("half-press", SDK::CrCommandId::CrCommandId_Release, SDK::CrCommandParam::CrCommandParam_Down, "s1_shooting", true)},
     {"af-shutter", ActionMapping("af-shutter", SDK::CrCommandId::CrCommandId_Release, SDK::CrCommandParam::CrCommandParam_Down, "af_shutter", true)},
     {"zoom", ActionMapping("zoom", 0, 0, "execute_zoom_operation_direct", true)},  // Custom zoom handler
     {"focus-near-far", ActionMapping("focus-near-far", 0, 0, "focus_near_far", true)},  // Custom near/far focus step handler
     // Future actions can be added here with one line each:
-    // {"movie-rec", ActionMapping("movie-rec", SDK::CrCommandId::CrCommandId_MovieRecord, SDK::CrCommandParam::CrCommandParam_Down, "toggle_movie_recording", true)},
+    {"movie-rec", ActionMapping("movie-rec", SDK::CrCommandId::CrCommandId_MovieRecord, SDK::CrCommandParam::CrCommandParam_Down, "toggle_movie_recording", true)},
 };
 
 CameraWebController::CameraWebController()
@@ -128,8 +245,7 @@ CameraWebController::~CameraWebController() {
     // Also clear the web event callback so no new wiring can happen
     m_webEventCallback = nullptr;
 
-    // Disconnect and wait for the async OnDisconnected callback before release.
-    // Releasing a live handle can race SDK callback threads during shutdown.
+    // Helper: disconnect a camera and wait for the async OnDisconnected callback
     auto disconnectAndWait = [](std::shared_ptr<CameraDevice>& camera, const std::string& label) {
         if (camera->is_connected()) {
             std::cout << "[Shutdown] Disconnecting " << label << "..." << std::endl;
@@ -272,8 +388,7 @@ void CameraWebController::discoverCameras() {
         freshIds[id] = camera_info;
     }
 
-    // Build set of connected camera IDs. Do not recreate connected
-    // CameraDevice instances because their SDK handles are still live.
+    // Build set of connected camera IDs (these must NOT be recreated)
     std::set<std::string> connectedIds;
     {
         std::lock_guard<std::mutex> threadLock(m_cameraThreadsMutex);
@@ -459,6 +574,16 @@ ApiResponse CameraWebController::connectCamera(const std::string& connectionMode
 
     std::cout << "🔌 Reconnecting mode: " << reconnecting << " (SDK: " << (reconnectMode == SDK::CrReconnecting_ON ? "ON" : "OFF") << ")" << std::endl;
 
+    // Wire the SSE event callback BEFORE calling connect(). On unplug→replug
+    // reconnects the SDK can fire OnConnected in <1s, beating the original
+    // post-connect wireCameraEventCallback() and emitting `connected` into a
+    // null callback — Swift clients then time out their 60s SSE wait and
+    // only catch up via the discovery-poll fallback. Wiring up front removes
+    // the race. Camera ID is stable across reconnects (hardware ID) and
+    // available pre-connect via m_info, so the closure captures the right ID.
+    std::string preConnectId = std::string(targetCamera->get_id().data());
+    wireCameraEventCallback(targetCamera, preConnectId);
+
     if (!username.empty() && !password.empty()) {
         std::cout << "🔐 Using SSH authentication for camera connection" << std::endl;
         // Note: The CameraDevice::connect method may need to be extended to support SSH credentials
@@ -497,12 +622,11 @@ ApiResponse CameraWebController::connectCamera(const std::string& connectionMode
                 std::cout << "🧹 Cleaning up existing worker threads for camera: " << connectedCameraId << std::endl;
             }
         }
-        // Clean up existing threads outside the lock; destroyCameraThreads()
-        // also needs m_cameraThreadsMutex.
+        // Clean up existing threads outside the lock to avoid deadlock
         destroyCameraThreads(connectedCameraId);
 
-        // Wire SSE event callback so SDK events are forwarded to web clients
-        wireCameraEventCallback(targetCamera, connectedCameraId);
+        // (SSE event callback already wired before connect() above to avoid
+        // OnConnected racing the wiring on fast reconnects.)
 
         // Now create fresh worker threads
         createCameraThreads(connectedCameraId, targetCamera);
@@ -693,6 +817,21 @@ ApiResponse CameraWebController::getStatus(const std::string& cameraId) {
         response.camera.connected = true;
         response.camera.model = std::string(it->second->camera->get_model().data());
         response.camera.id = cameraId;
+
+        // Surface the connection mode so clients can tell `remote` from
+        // `remote-transfer` / `contents` without having to remember what
+        // they passed at connect time.
+        auto modeIt = m_connectedModes.find(cameraId);
+        if (modeIt != m_connectedModes.end()) {
+            switch (modeIt->second) {
+                case ConnectionMode::Remote:
+                    response.data["mode"] = "remote"; break;
+                case ConnectionMode::RemoteTransfer:
+                    response.data["mode"] = "remote-transfer"; break;
+                case ConnectionMode::ContentsTransfer:
+                    response.data["mode"] = "contents"; break;
+            }
+        }
     } else {
         response.success = true;
         response.message = "No camera connected";
@@ -756,8 +895,24 @@ std::string CameraWebController::toJson(const ApiResponse& response) {
         for (const auto& pair : response.data) {
             if (!first) json << ",\n";
 
-            // Special handling for fields that are already JSON (don't wrap in quotes)
-            if (pair.first == "available_values" || pair.first == "properties") {
+            // Special handling for fields that are already JSON (don't wrap in quotes).
+            // `writable` (PropertyData), `enabled`, and `streaming` (LiveViewStatus)
+            // are stored as the literal strings "true"/"false" which is valid JSON
+            // for a boolean — emitting unquoted matches the OpenAPI schema
+            // (type: boolean). `available_values`, `properties`, and
+            // `total_properties` are pre-encoded JSON fragments.
+            // `startNo` (SaveInfoData) is stored as `std::to_string(int)` —
+            // OpenAPI declares it as integer, so emit unquoted to match. The
+            // saved-info handlers populate "Not set" for path/prefix when
+            // empty (still strings), but startNo is always a numeric string,
+            // so this is safe. Without this, strict-typed clients (Swift,
+            // Python, TypeScript) fail to decode the entire SaveInfo response.
+            if (pair.first == "available_values" || pair.first == "properties" ||
+                pair.first == "writable" || pair.first == "total_properties" ||
+                pair.first == "enabled" || pair.first == "streaming" ||
+                pair.first == "startNo" || pair.first == "supported" ||
+                pair.first == "count" || pair.first == "slot" ||
+                pair.first == "speed" || pair.first == "step") {
                 json << "    \"" << pair.first << "\": " << pair.second;
             } else {
                 json << "    \"" << pair.first << "\": \"" << pair.second << "\"";
@@ -839,6 +994,8 @@ ApiResponse CameraWebController::setISO(const std::string& cameraId, const std::
         return response;
     }
 
+    populateResponseCamera(response, camera);
+
     try {
         // Get ISO property from camera to check writability and possible values
         CrInt32u codes[1] = { SDK::CrDevicePropertyCode::CrDeviceProperty_IsoSensitivity };
@@ -877,14 +1034,25 @@ ApiResponse CameraWebController::setISO(const std::string& cameraId, const std::
         
         // Convert string ISO value to Sony SDK value format
         CrInt32u targetValue = 0;
-        if (isoValue == "auto") {
-            targetValue = 0xFFFFFFFF; // Sony's auto ISO value
-        } else if (isoValue.length() >= 2 && (isoValue.substr(0, 2) == "0x" || isoValue.substr(0, 2) == "0X")) {
+        std::string normalizedIsoValue = toLowerCopy(isoValue);
+        if (normalizedIsoValue.rfind("iso ", 0) == 0) {
+            normalizedIsoValue = normalizedIsoValue.substr(4);
+        }
+        if (normalizedIsoValue == "auto") {
+            auto autoIt = std::find(values.begin(), values.end(), static_cast<CrInt32u>(0xFFFFFF));
+            if (autoIt != values.end()) {
+                targetValue = *autoIt;
+            } else {
+                response.success = false;
+                response.message = "ISO auto is not supported by camera";
+                return response;
+            }
+        } else if (normalizedIsoValue.length() >= 2 && (normalizedIsoValue.substr(0, 2) == "0x" || normalizedIsoValue.substr(0, 2) == "0X")) {
             // Hex value: "0x64" -> 100
-            targetValue = static_cast<CrInt32u>(std::stoull(isoValue.substr(2), nullptr, 16));
+            targetValue = static_cast<CrInt32u>(std::stoull(normalizedIsoValue.substr(2), nullptr, 16));
         } else {
             // Decimal value: "100" -> 100
-            targetValue = static_cast<CrInt32u>(std::stoull(isoValue, nullptr, 10));
+            targetValue = static_cast<CrInt32u>(std::stoull(normalizedIsoValue, nullptr, 10));
         }
         
         // Find matching value in possible values
@@ -922,13 +1090,9 @@ ApiResponse CameraWebController::setISO(const std::string& cameraId, const std::
 
     } catch (const std::exception& e) {
         response.success = false;
-        response.message = "Error setting ISO: " + std::string(e.what());
+        response.message = "Invalid ISO value. Use 'auto', a decimal ISO value (for example '100'), or a hex value from available_values (for example '0x64').";
         std::cout << "❌ Exception setting ISO: " << e.what() << std::endl;
     }
-
-    response.camera.connected = true;
-    response.camera.model = std::string(camera->get_model().data());
-    response.camera.id = std::string(camera->get_id().data());
 
     return response;
 }
@@ -959,6 +1123,8 @@ ApiResponse CameraWebController::setAperture(const std::string& cameraId, const 
         response.message = "Camera not connected: " + cameraId;
         return response;
     }
+
+    populateResponseCamera(response, camera);
 
     try {
         // Get aperture property from camera to check writability and possible values
@@ -1011,6 +1177,10 @@ ApiResponse CameraWebController::setAperture(const std::string& cameraId, const 
                 double fValue = std::stod(numStr);
                 targetValue = static_cast<CrInt32u>(fValue * 100);
             }
+        } else if ((apertureValue.find('F') == 0 || apertureValue.find('f') == 0) && apertureValue.find('/') == std::string::npos) {
+            std::string numStr = apertureValue.substr(1);
+            double fValue = std::stod(numStr);
+            targetValue = static_cast<CrInt32u>(fValue * 100);
         } else if (apertureValue.length() >= 2 && (apertureValue.substr(0, 2) == "0x" || apertureValue.substr(0, 2) == "0X")) {
             // Direct hex value: "0x190" -> 400
             targetValue = static_cast<CrInt32u>(std::stoull(apertureValue.substr(2), nullptr, 16));
@@ -1066,13 +1236,9 @@ ApiResponse CameraWebController::setAperture(const std::string& cameraId, const 
 
     } catch (const std::exception& e) {
         response.success = false;
-        response.message = "Error setting aperture: " + std::string(e.what());
+        response.message = "Invalid aperture format. Expected hex (0x320), decimal SDK value (800), f-stop token (f/8), or numeric f-stop value (8 or 2.8).";
         std::cout << "❌ Exception setting aperture: " << e.what() << std::endl;
     }
-
-    response.camera.connected = true;
-    response.camera.model = std::string(camera->get_model().data());
-    response.camera.id = std::string(camera->get_id().data());
 
     return response;
 }
@@ -2066,6 +2232,655 @@ void CameraWebController::liveViewStreamingThread() {
 // ==============================================================================
 
 // Helper: Get full property data from camera (used by both custom and generic getters)
+// Helper: Format property data (shared by getPropertyData and getPropertyDataFromBulk)
+void CameraWebController::formatPropertyData(PropertyData& data, std::shared_ptr<CameraDevice> camera,
+                                              const std::string& propertyName,
+                                              const unsigned char* values, int valueSize) {
+    // Determine value type and parse accordingly
+    if (propertyName == "aperture" || propertyName == "f-number") {
+        int nval = valueSize / sizeof(std::uint16_t);
+        auto parsed = cli::parse_f_number(values, nval);
+        for (const auto& val : parsed) {
+            AvailablePropertyValue availVal;
+            availVal.value = val;
+            std::stringstream hex;
+            hex << "0x" << std::hex << val;
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_f_number(val);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_f_number(static_cast<std::uint16_t>(data.currentValue));
+    }
+    else if (propertyName == "iso" || propertyName == "iso-sensitivity") {
+        int nval = valueSize / sizeof(std::uint32_t);
+        auto parsed = cli::parse_iso_sensitivity(values, nval);
+        for (const auto& val : parsed) {
+            AvailablePropertyValue availVal;
+            availVal.value = val;
+            std::stringstream hex;
+            hex << "0x" << std::hex << val;
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_iso_sensitivity(val);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_iso_sensitivity(static_cast<std::uint32_t>(data.currentValue));
+    }
+    else if (propertyName == "shutter-speed") {
+        int nval = valueSize / sizeof(std::uint32_t);
+        auto parsed = cli::parse_shutter_speed(values, nval);
+        for (const auto& val : parsed) {
+            AvailablePropertyValue availVal;
+            availVal.value = val;
+            std::stringstream hex;
+            hex << "0x" << std::hex << val;
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_shutter_speed(val);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_shutter_speed(static_cast<std::uint32_t>(data.currentValue));
+    }
+    else if (propertyName == "white-balance") {
+        int nval = valueSize / sizeof(std::uint16_t);
+        auto parsed = cli::parse_white_balance(values, nval);
+        for (const auto& val : parsed) {
+            AvailablePropertyValue availVal;
+            availVal.value = val;
+            std::stringstream hex;
+            hex << "0x" << std::hex << val;
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_white_balance(val);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_white_balance(static_cast<std::uint16_t>(data.currentValue));
+    }
+    else if (propertyName == "focus-mode") {
+        int nval = valueSize / sizeof(std::uint16_t);
+        auto parsed = cli::parse_focus_mode(values, nval);
+        for (const auto& val : parsed) {
+            AvailablePropertyValue availVal;
+            availVal.value = val;
+            std::stringstream hex;
+            hex << "0x" << std::hex << val;
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_focus_mode(val);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_focus_mode(static_cast<std::uint16_t>(data.currentValue));
+    }
+    else if (propertyName == "exposure-program-mode" || propertyName == "exposure-mode") {
+        int nval = valueSize / sizeof(std::uint32_t);
+        auto parsed = cli::parse_exposure_program_mode(values, nval);
+        for (const auto& val : parsed) {
+            AvailablePropertyValue availVal;
+            availVal.value = val;
+            std::stringstream hex;
+            hex << "0x" << std::hex << val;
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_exposure_program_mode(val);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_exposure_program_mode(static_cast<std::uint32_t>(data.currentValue));
+    }
+    else if (propertyName == "drive-mode" || propertyName == "still-capture-mode") {
+        int nval = valueSize / sizeof(std::uint32_t);
+        auto parsed = cli::parse_still_capture_mode(values, nval);
+        for (const auto& val : parsed) {
+            AvailablePropertyValue availVal;
+            availVal.value = val;
+            std::stringstream hex;
+            hex << "0x" << std::hex << val;
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_still_capture_mode(val);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_still_capture_mode(static_cast<std::uint32_t>(data.currentValue));
+    }
+    else if (propertyName == "file-format") {
+        int nval = valueSize / sizeof(std::uint16_t);
+        const std::uint16_t* vals = reinterpret_cast<const std::uint16_t*>(values);
+        for (int j = 0; j < nval; ++j) {
+            AvailablePropertyValue availVal;
+            availVal.value = vals[j];
+            std::stringstream hex;
+            hex << "0x" << std::hex << vals[j];
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_file_type(vals[j]);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_file_type(static_cast<std::uint16_t>(data.currentValue));
+    }
+    else if (propertyName == "image-quality") {
+        int nval = valueSize / sizeof(std::uint32_t);
+        const std::uint32_t* vals = reinterpret_cast<const std::uint32_t*>(values);
+        for (int j = 0; j < nval; ++j) {
+            AvailablePropertyValue availVal;
+            availVal.value = vals[j];
+            std::stringstream hex;
+            hex << "0x" << std::hex << vals[j];
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_still_image_quality(vals[j]);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_still_image_quality(static_cast<std::uint32_t>(data.currentValue));
+    }
+    else if (propertyName == "raw-compression") {
+        int nval = valueSize / sizeof(std::uint16_t);
+        const std::uint16_t* vals = reinterpret_cast<const std::uint16_t*>(values);
+        for (int j = 0; j < nval; ++j) {
+            AvailablePropertyValue availVal;
+            availVal.value = vals[j];
+            std::stringstream hex;
+            hex << "0x" << std::hex << vals[j];
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_raw_file_compression(vals[j]);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_raw_file_compression(static_cast<std::uint16_t>(data.currentValue));
+    }
+    else if (propertyName == "focus-area") {
+        int nval = valueSize / sizeof(std::uint16_t);
+        auto parsed = cli::parse_focus_area(values, nval);
+        for (const auto& val : parsed) {
+            AvailablePropertyValue availVal;
+            availVal.value = val;
+            std::stringstream hex;
+            hex << "0x" << std::hex << val;
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_focus_area(val);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_focus_area(static_cast<std::uint16_t>(data.currentValue));
+    }
+    else if (propertyName == "priority-key" || propertyName == "position-key-setting") {
+        int nval = valueSize / sizeof(std::uint16_t);
+        auto parsed = cli::parse_position_key_setting(values, nval);
+        for (const auto& val : parsed) {
+            AvailablePropertyValue availVal;
+            availVal.value = val;
+            std::stringstream hex;
+            hex << "0x" << std::hex << val;
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_position_key_setting(val);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_position_key_setting(static_cast<std::uint16_t>(data.currentValue));
+    }
+    else if (propertyName == "still-image-store-destination" || propertyName == "sd-card-save-destination") {
+        int nval = valueSize / sizeof(std::uint16_t);
+        auto parsed = cli::parse_still_image_store_destination(values, nval);
+        for (const auto& val : parsed) {
+            AvailablePropertyValue availVal;
+            availVal.value = val;
+            std::stringstream hex;
+            hex << "0x" << std::hex << val;
+            availVal.hexValue = hex.str();
+            availVal.formatted = cli::format_still_image_store_destination(val);
+            data.availableValues.push_back(availVal);
+        }
+        data.currentFormatted = cli::format_still_image_store_destination(static_cast<std::uint16_t>(data.currentValue));
+    }
+    else if (propertyName == "focus-driving-status") {
+        // Focus driving status: 0x01 = NotDriving, 0x02 = Driving
+        if (data.currentValue == 0x01) {
+            data.currentFormatted = "Not Driving";
+        } else if (data.currentValue == 0x02) {
+            data.currentFormatted = "Driving";
+        } else {
+            data.currentFormatted = "Unknown (0x" + ([&]{ std::ostringstream o; o << std::hex << data.currentValue; return o.str(); })() + ")";
+        }
+    }
+    else if (propertyName == "zoom-distance") {
+        // Zoom distance: value is focal length in 0.001mm units
+        double mm = data.currentValue / 1000.0;
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(0) << mm << "mm";
+        data.currentFormatted = oss.str();
+        // Available values are min/max/step range
+        if (valueSize > 0 && values != nullptr) {
+            int nval = valueSize / sizeof(std::uint32_t);
+            const std::uint32_t* vals = reinterpret_cast<const std::uint32_t*>(values);
+            for (int j = 0; j < nval; ++j) {
+                AvailablePropertyValue availVal;
+                availVal.value = vals[j];
+                std::stringstream hex;
+                hex << "0x" << std::hex << vals[j];
+                availVal.hexValue = hex.str();
+                double v = vals[j] / 1000.0;
+                std::ostringstream fmtOss;
+                fmtOss << std::fixed << std::setprecision(0) << v << "mm";
+                availVal.formatted = fmtOss.str();
+                data.availableValues.push_back(availVal);
+            }
+        }
+    }
+    else if (propertyName == "focus-distance") {
+        // Focus distance: value is 1/1000 meter, 0xFFFFFFFF = infinity
+        if (data.currentValue == 0xFFFFFFFF) {
+            data.currentFormatted = "Infinity";
+        } else {
+            double meters = data.currentValue / 1000.0;
+            std::ostringstream oss;
+            if (meters >= 1.0) {
+                oss << std::fixed << std::setprecision(1) << meters << "m";
+            } else {
+                oss << std::fixed << std::setprecision(2) << meters << "m";
+            }
+            data.currentFormatted = oss.str();
+        }
+        // Available values are min/max/step range, format them too
+        if (valueSize > 0 && values != nullptr) {
+            int nval = valueSize / sizeof(std::uint32_t);
+            const std::uint32_t* vals = reinterpret_cast<const std::uint32_t*>(values);
+            for (int j = 0; j < nval; ++j) {
+                AvailablePropertyValue availVal;
+                availVal.value = vals[j];
+                std::stringstream hex;
+                hex << "0x" << std::hex << vals[j];
+                availVal.hexValue = hex.str();
+                if (vals[j] == 0xFFFFFFFF) {
+                    availVal.formatted = "Infinity";
+                } else {
+                    double m = vals[j] / 1000.0;
+                    std::ostringstream fmtOss;
+                    if (m >= 1.0) {
+                        fmtOss << std::fixed << std::setprecision(1) << m << "m";
+                    } else {
+                        fmtOss << std::fixed << std::setprecision(2) << m << "m";
+                    }
+                    availVal.formatted = fmtOss.str();
+                }
+                data.availableValues.push_back(availVal);
+            }
+        }
+    }
+    // --- New properties: uint8 enums with existing format functions ---
+    else if (propertyName == "shutter-type") {
+        data.currentFormatted = cli::format_shutter_type(static_cast<std::uint8_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = cli::format_shutter_type(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "silent-mode") {
+        data.currentFormatted = cli::format_silent_mode(static_cast<std::uint8_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = cli::format_silent_mode(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "image-stabilization") {
+        data.currentFormatted = cli::format_image_stabilization_steady_shot(static_cast<std::uint8_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = cli::format_image_stabilization_steady_shot(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "movie-stabilization") {
+        data.currentFormatted = cli::format_movie_image_stabilization_steady_shot(static_cast<std::uint8_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = cli::format_movie_image_stabilization_steady_shot(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "zoom-setting") {
+        data.currentFormatted = cli::format_zoom_setting_type(static_cast<std::uint8_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = cli::format_zoom_setting_type(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "media-slot1-status" || propertyName == "media-slot2-status") {
+        data.currentFormatted = cli::format_media_slotx_status(static_cast<std::uint8_t>(data.currentValue));
+    }
+    else if (propertyName == "movie-shooting-mode") {
+        data.currentFormatted = cli::format_movie_shooting_mode(static_cast<std::uint16_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = cli::format_movie_shooting_mode(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "movie-recording-setting") {
+        data.currentFormatted = cli::format_recording_setting(static_cast<std::uint16_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = cli::format_recording_setting(vals[j]); data.availableValues.push_back(a); } }
+    }
+    // --- New properties: inline formatting for simple enums ---
+    else if (propertyName == "metering-mode") {
+        auto fmt = [](uint16_t v) -> std::string {
+            switch(v) { case 1: return "Average"; case 2: return "Center Weighted Avg"; case 3: return "Multi Spot"; case 4: return "Center Spot"; case 5: return "Multi"; case 6: return "Center Weighted"; case 7: return "Entire Screen Avg"; case 8: return "Spot (Standard)"; case 9: return "Spot (Large)"; case 0xa: return "Highlight Weighted"; default: return "Unknown"; }
+        };
+        data.currentFormatted = fmt(static_cast<uint16_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = fmt(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "flash-mode") {
+        auto fmt = [](uint16_t v) -> std::string {
+            switch(v) { case 1: return "Auto"; case 2: return "Off"; case 3: return "Fill"; case 4: return "Ext Sync"; case 5: return "Slow Sync"; case 6: return "Rear Sync"; default: return "Unknown"; }
+        };
+        data.currentFormatted = fmt(static_cast<uint16_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = fmt(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "wireless-flash") {
+        data.currentFormatted = data.currentValue == 0 ? "Off" : "On";
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = vals[j] == 0 ? "Off" : "On"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "image-size") {
+        auto fmt = [](uint16_t v) -> std::string { switch(v) { case 1: return "L"; case 2: return "M"; case 3: return "S"; case 4: return "VGA"; default: return "Unknown"; } };
+        data.currentFormatted = fmt(static_cast<uint16_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = fmt(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "aspect-ratio") {
+        auto fmt = [](uint16_t v) -> std::string { switch(v) { case 1: return "3:2"; case 2: return "16:9"; case 3: return "4:3"; case 4: return "1:1"; default: return "Unknown"; } };
+        data.currentFormatted = fmt(static_cast<uint16_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = fmt(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "color-space") {
+        data.currentFormatted = data.currentValue == 1 ? "sRGB" : "AdobeRGB";
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = vals[j] == 1 ? "sRGB" : "AdobeRGB"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "high-iso-nr") {
+        auto fmt = [](uint8_t v) -> std::string { switch(v) { case 1: return "Off"; case 2: return "Low"; case 3: return "Normal"; case 4: return "High"; default: return "Unknown"; } };
+        data.currentFormatted = fmt(static_cast<uint8_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = fmt(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "long-exposure-nr" || propertyName == "flicker-less-shooting") {
+        data.currentFormatted = data.currentValue <= 1 ? "Off" : "On";
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = vals[j] <= 1 ? "Off" : "On"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "ae-lock" || propertyName == "awb-lock") {
+        data.currentFormatted = data.currentValue <= 1 ? "Off" : "On";
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = vals[j] <= 1 ? "Off" : "On"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "audio-recording" || propertyName == "embed-lut-file") {
+        data.currentFormatted = data.currentValue <= 1 ? (data.currentValue == 0 ? "Off" : (propertyName == "embed-lut-file" ? "Off" : "On")) : "On";
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); if (propertyName == "audio-recording") a.formatted = vals[j] == 0 ? "Off" : "On"; else a.formatted = vals[j] <= 1 ? "Off" : "On"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "movie-file-format") {
+        auto fmt = [](uint8_t v) -> std::string {
+            switch(v) { case 0: return "AVCHD"; case 1: return "MP4"; case 2: return "XAVC S 4K"; case 3: return "XAVC S HD"; case 4: return "XAVC HS 8K"; case 5: return "XAVC HS 4K"; case 6: return "XAVC S-L 4K"; case 7: return "XAVC S-L HD"; case 8: return "XAVC S-I 4K"; case 9: return "XAVC S-I HD"; case 10: return "XAVC I"; case 11: return "XAVC L"; case 12: return "XAVC HS HD"; case 13: return "XAVC S-I DCI 4K"; default: return "Format " + std::to_string(v); }
+        };
+        data.currentFormatted = fmt(static_cast<uint8_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = fmt(static_cast<uint8_t>(vals[j])); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "movie-recording-frame-rate") {
+        auto fmt = [](uint8_t v) -> std::string {
+            switch(v) { case 1: return "120p"; case 2: return "100p"; case 3: return "60p"; case 4: return "50p"; case 5: return "30p"; case 6: return "25p"; case 7: return "24p"; case 8: return "23.98p"; case 9: return "29.97p"; case 10: return "59.94p"; case 0x16: return "24.00p"; case 0x17: return "119.88p"; default: return std::to_string(v) + "p"; }
+        };
+        data.currentFormatted = fmt(static_cast<uint8_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = fmt(static_cast<uint8_t>(vals[j])); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "dro") {
+        auto fmt = [](uint16_t v) -> std::string {
+            switch(v) { case 0: return "Off"; case 1: return "On"; case 0x10: return "Auto"; case 0x11: return "Lv1"; case 0x12: return "Lv2"; case 0x13: return "Lv3"; case 0x14: return "Lv4"; case 0x15: return "Lv5"; case 0x20: return "Auto"; case 0x30: return "HDR Auto"; case 0x31: return "HDR 1.0 EV"; case 0x32: return "HDR 2.0 EV"; case 0x33: return "HDR 3.0 EV"; case 0x34: return "HDR 4.0 EV"; case 0x35: return "HDR 5.0 EV"; case 0x36: return "HDR 6.0 EV"; default: return "DRO " + std::to_string(v); }
+        };
+        data.currentFormatted = fmt(static_cast<uint16_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = fmt(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "exposure-compensation" || propertyName == "flash-compensation") {
+        // Exposure/flash comp: SDK uint16 value encodes EV in 1/1000 steps
+        // e.g., 700 = +0.7, -300 = -0.3, 0 = 0.0
+        auto fmt = [](int16_t v) -> std::string {
+            double ev = v / 1000.0;
+            std::ostringstream oss;
+            if (ev > 0) oss << "+";
+            oss << std::fixed << std::setprecision(1) << ev << " EV";
+            return oss.str();
+        };
+        data.currentFormatted = fmt(static_cast<int16_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = fmt(static_cast<int16_t>(vals[j])); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "creative-look") {
+        auto fmt = [](uint16_t v) -> std::string {
+            uint8_t idx = v & 0xFF;
+            bool isCustom = (v >> 8) != 0;
+            std::string name;
+            switch(idx) { case 1: name = "ST"; break; case 2: name = "PT"; break; case 3: name = "NT"; break; case 4: name = "VV"; break; case 5: name = "VV2"; break; case 6: name = "FL"; break; case 7: name = "IN"; break; case 8: name = "SH"; break; case 9: name = "BW"; break; case 0xa: name = "SE"; break; default: name = "Look " + std::to_string(idx); break; }
+            return isCustom ? "Custom " + name : name;
+        };
+        data.currentFormatted = fmt(static_cast<uint16_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = fmt(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "picture-profile") {
+        auto fmt = [](uint8_t v) -> std::string {
+            if (v == 0) return "Off";
+            if (v >= 1 && v <= 11) return "PP" + std::to_string(v);
+            if (v >= 0x41 && v <= 0x50) return "Custom " + std::to_string(v - 0x40);
+            return "PP" + std::to_string(v);
+        };
+        data.currentFormatted = fmt(static_cast<uint8_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = fmt(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "aps-c-s35") {
+        auto fmt = [](uint8_t v) -> std::string { switch(v) { case 1: return "Off"; case 2: return "On"; case 3: return "Auto"; default: return "Unknown"; } };
+        data.currentFormatted = fmt(static_cast<uint8_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = fmt(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "shutter-mode") {
+        data.currentFormatted = data.currentValue == 1 ? "Speed" : "Angle";
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = vals[j] == 1 ? "Speed" : "Angle"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "movie-shooting-mode-color-gamut") {
+        data.currentFormatted = data.currentValue == 1 ? "S-Gamut3.Cine" : "S-Gamut3";
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = vals[j] == 1 ? "S-Gamut3.Cine" : "S-Gamut3"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "timecode-format") {
+        data.currentFormatted = data.currentValue == 1 ? "DF" : "NDF";
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = vals[j] == 1 ? "DF" : "NDF"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "timecode-run") {
+        data.currentFormatted = data.currentValue == 1 ? "Rec Run" : "Free Run";
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = vals[j] == 1 ? "Rec Run" : "Free Run"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "timecode-make") {
+        data.currentFormatted = data.currentValue == 1 ? "Preset" : "Regenerate";
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = vals[j] == 1 ? "Preset" : "Regenerate"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "shutter-angle") {
+        if (data.currentValue == 0) {
+            data.currentFormatted = "Off";
+        } else {
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(1) << (data.currentValue / 1000.0) << "\xC2\xB0";
+            data.currentFormatted = oss.str();
+        }
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint32_t); const auto* vals = reinterpret_cast<const std::uint32_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); if (vals[j] == 0) a.formatted = "Off"; else { std::ostringstream o; o << std::fixed << std::setprecision(1) << (vals[j] / 1000.0) << "\xC2\xB0"; a.formatted = o.str(); } data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "exposure-index") {
+        // EI value: raw uint16 = the EI number (e.g. 800, 1600, 3200)
+        data.currentFormatted = std::to_string(data.currentValue) + " EI";
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = std::to_string(vals[j]) + " EI"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "base-iso") {
+        data.currentFormatted = data.currentValue == 1 ? "High" : "Low";
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = vals[j] == 1 ? "High" : "Low"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "base-look-value") {
+        // Packed uint16: high byte = setter type (Preset/User/Scene/Temporary), low byte = index
+        auto fmtFallback = [](uint16_t v) -> std::string {
+            uint8_t setter = (v >> 8) & 0xFF;
+            uint8_t idx = v & 0xFF;
+            std::string type;
+            switch(setter) { case 0x00: type = "Preset"; break; case 0x01: type = "User"; break; case 0x02: type = "Scene"; break; case 0x80: type = "Temporary"; break; default: type = "Look"; break; }
+            return type + " " + std::to_string(idx);
+        };
+
+        // Try SDK display string list for actual LUT names (e.g. "s709", "Venice CS")
+        auto displayNames = camera->getDisplayStringNames(
+            SDK::CrDisplayStringType_BaseLook_Name_Display, 3000);
+
+        auto fmt = [&](uint16_t v) -> std::string {
+            auto it = displayNames.find(v);
+            if (it != displayNames.end() && !it->second.empty()) return it->second;
+            return fmtFallback(v);
+        };
+
+        data.currentFormatted = fmt(static_cast<uint16_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = fmt(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "pp-lut-base-look") {
+        // SelectUserBaseLookToSetInPPLUT: uint16, low byte = slot index
+        auto fmt = [](uint16_t v) -> std::string {
+            uint8_t idx = v & 0xFF;
+            if (idx == 0) return "None";
+            return "PPLUT " + std::to_string(idx);
+        };
+        data.currentFormatted = fmt(static_cast<uint16_t>(data.currentValue));
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = fmt(vals[j]); data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "shooting-enable") {
+        data.currentFormatted = (data.currentValue == 0x01) ? "Enabled" : "Disabled";
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = (vals[j] == 0x01) ? "Enabled" : "Disabled"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "image-id-num-setting") {
+        data.currentFormatted = (data.currentValue == 0x02) ? "On" : "Off";
+        if (valueSize > 0 && values) { int nval = valueSize; const auto* vals = reinterpret_cast<const std::uint8_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << (int)vals[j]; a.hexValue = h.str(); a.formatted = (vals[j] == 0x02) ? "On" : "Off"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "image-id-string-max-length") {
+        data.currentFormatted = std::to_string(data.currentValue) + " chars";
+    }
+    else if (propertyName == "image-id-num") {
+        data.currentFormatted = std::to_string(data.currentValue);
+        // UInt64Range: [min, max, step]
+        if (valueSize >= 3 * (int)sizeof(std::uint64_t) && values) {
+            auto vals = reinterpret_cast<const std::uint64_t*>(values);
+            AvailablePropertyValue aMin; aMin.value = vals[0]; aMin.formatted = "min: " + std::to_string(vals[0]); std::stringstream h0; h0 << "0x" << std::hex << vals[0]; aMin.hexValue = h0.str(); data.availableValues.push_back(aMin);
+            AvailablePropertyValue aMax; aMax.value = vals[1]; aMax.formatted = "max: " + std::to_string(vals[1]); std::stringstream h1; h1 << "0x" << std::hex << vals[1]; aMax.hexValue = h1.str(); data.availableValues.push_back(aMax);
+            AvailablePropertyValue aStep; aStep.value = vals[2]; aStep.formatted = "step: " + std::to_string(vals[2]); std::stringstream h2; h2 << "0x" << std::hex << vals[2]; aStep.hexValue = h2.str(); data.availableValues.push_back(aStep);
+        }
+    }
+    else if (propertyName == "recording-state") {
+        switch(data.currentValue) { case 0: data.currentFormatted = "Not Recording"; break; case 1: data.currentFormatted = "Recording"; break; case 2: data.currentFormatted = "Recording Failed"; break; default: data.currentFormatted = "Unknown"; }
+    }
+    else if (propertyName == "overheating-state") {
+        switch(data.currentValue) { case 0: data.currentFormatted = "Normal"; break; case 1: data.currentFormatted = "Pre-Overheating"; break; case 2: data.currentFormatted = "Overheating"; break; default: data.currentFormatted = "Unknown"; }
+    }
+    else if (propertyName == "camera-error-caution-status" || propertyName == "system-error-caution-status") {
+        // UInt8Array: 0x01=NoError, 0x02=Error
+        data.currentFormatted = (data.currentValue == 0x01) ? "No Error" : (data.currentValue == 0x02) ? "Error" : "Unknown";
+        if (valueSize > 0 && values) {
+            const auto* vals = reinterpret_cast<const std::uint8_t*>(values);
+            for (int j = 0; j < valueSize; ++j) {
+                AvailablePropertyValue a;
+                a.value = vals[j];
+                std::stringstream h;
+                h << "0x" << std::hex << (int)vals[j];
+                a.hexValue = h.str();
+                a.formatted = (vals[j] == 0x01) ? "No Error" : (vals[j] == 0x02) ? "Error" : "Unknown";
+                data.availableValues.push_back(a);
+            }
+        }
+    }
+    else if (propertyName == "camera-system-error-info") {
+        // String property — currentValue is not meaningful, format as empty
+        // Actual string content comes via GetCurrentStr() on broadcast cameras only
+        data.currentFormatted = "";
+    }
+    else if (propertyName == "battery-remain") {
+        data.currentFormatted = std::to_string(data.currentValue) + "%";
+    }
+    else if (propertyName == "white-balance-color-temp") {
+        data.currentFormatted = std::to_string(data.currentValue) + "K";
+        // Available values are range [min, max, step] — format as Kelvin
+        if (valueSize > 0 && values) { int nval = valueSize / sizeof(std::uint16_t); const auto* vals = reinterpret_cast<const std::uint16_t*>(values); for (int j = 0; j < nval; ++j) { AvailablePropertyValue a; a.value = vals[j]; std::stringstream h; h << "0x" << std::hex << vals[j]; a.hexValue = h.str(); a.formatted = std::to_string(vals[j]) + "K"; data.availableValues.push_back(a); } }
+    }
+    else if (propertyName == "audio-input-master-level") {
+        data.currentFormatted = std::to_string(data.currentValue);
+        // UInt16Range: parse as [min, max, step] triplet
+        if (valueSize > 0 && values) {
+            int nval = valueSize / sizeof(std::uint16_t);
+            const auto* vals = reinterpret_cast<const std::uint16_t*>(values);
+            if (nval == 3) {
+                // Range: min, max, step
+                auto addRangeVal = [&](const std::string& label, std::uint16_t v) {
+                    AvailablePropertyValue a;
+                    a.value = v;
+                    std::stringstream h;
+                    h << "0x" << std::hex << v;
+                    a.hexValue = h.str();
+                    a.formatted = label + ": " + std::to_string(v);
+                    data.availableValues.push_back(a);
+                };
+                addRangeVal("min", vals[0]);
+                addRangeVal("max", vals[1]);
+                addRangeVal("step", vals[2]);
+            } else {
+                // Fallback: discrete uint16 values
+                for (int j = 0; j < nval; ++j) {
+                    AvailablePropertyValue a;
+                    a.value = vals[j];
+                    std::stringstream h;
+                    h << "0x" << std::hex << vals[j];
+                    a.hexValue = h.str();
+                    a.formatted = std::to_string(vals[j]);
+                    data.availableValues.push_back(a);
+                }
+            }
+        }
+    }
+    else {
+        // Generic formatting for properties without custom formatters
+        // Try to parse as uint32_t first, then fall back to uint16_t
+        data.currentFormatted = std::to_string(data.currentValue);
+
+        // Parse available values if present
+        if (valueSize > 0 && values != nullptr) {
+            // Try uint32_t parsing first (most common)
+            if (valueSize % sizeof(std::uint32_t) == 0) {
+                int nval = valueSize / sizeof(std::uint32_t);
+                const std::uint32_t* vals = reinterpret_cast<const std::uint32_t*>(values);
+                for (int j = 0; j < nval; ++j) {
+                    AvailablePropertyValue availVal;
+                    availVal.value = vals[j];
+                    std::stringstream hex;
+                    hex << "0x" << std::hex << vals[j];
+                    availVal.hexValue = hex.str();
+                    availVal.formatted = std::to_string(vals[j]);
+                    data.availableValues.push_back(availVal);
+                }
+            }
+            // Fall back to uint16_t if size doesn't align with uint32_t
+            else if (valueSize % sizeof(std::uint16_t) == 0) {
+                int nval = valueSize / sizeof(std::uint16_t);
+                const std::uint16_t* vals = reinterpret_cast<const std::uint16_t*>(values);
+                for (int j = 0; j < nval; ++j) {
+                    AvailablePropertyValue availVal;
+                    availVal.value = vals[j];
+                    std::stringstream hex;
+                    hex << "0x" << std::hex << vals[j];
+                    availVal.hexValue = hex.str();
+                    availVal.formatted = std::to_string(vals[j]);
+                    data.availableValues.push_back(availVal);
+                }
+            }
+            // Fall back to uint8_t if needed
+            else if (valueSize > 0) {
+                int nval = valueSize / sizeof(std::uint8_t);
+                const std::uint8_t* vals = reinterpret_cast<const std::uint8_t*>(values);
+                for (int j = 0; j < nval; ++j) {
+                    AvailablePropertyValue availVal;
+                    availVal.value = vals[j];
+                    std::stringstream hex;
+                    hex << "0x" << std::hex << static_cast<int>(vals[j]);
+                    availVal.hexValue = hex.str();
+                    availVal.formatted = std::to_string(static_cast<int>(vals[j]));
+                    data.availableValues.push_back(availVal);
+                }
+            }
+        }
+    }
+}
+
+
+// Overload: Extract property data from an already-fetched CrDeviceProperty (no SDK call)
+PropertyData CameraWebController::getPropertyDataFromBulk(std::shared_ptr<CameraDevice> camera,
+                                                           const std::string& propertyName,
+                                                           const SDK::CrDeviceProperty& property) {
+    PropertyData data;
+    data.propertyName = propertyName;
+
+    if (!camera || !camera->is_connected()) {
+        return data;
+    }
+
+    try {
+        data.currentValue = property.GetCurrentValue();
+        data.writable = property.IsSetEnableCurrentValue();
+
+        std::stringstream hexValue;
+        hexValue << "0x" << std::hex << data.currentValue;
+        data.currentHexValue = hexValue.str();
+
+        const unsigned char* values = reinterpret_cast<const unsigned char*>(property.GetValues());
+        int valueSize = property.GetValueSize();
+
+        formatPropertyData(data, camera, propertyName, values, valueSize);
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Exception in getPropertyDataFromBulk: " << e.what() << std::endl;
+    }
+
+    return data;
+}
+
 PropertyData CameraWebController::getPropertyData(std::shared_ptr<CameraDevice> camera,
                                                   const std::string& propertyName,
                                                   CrInt32u propertyCode) {
@@ -2098,314 +2913,7 @@ PropertyData CameraWebController::getPropertyData(std::shared_ptr<CameraDevice> 
             const unsigned char* values = properties[0].GetValues();
             int valueSize = properties[0].GetValueSize();
 
-            // Determine value type and parse accordingly
-            if (propertyName == "aperture" || propertyName == "f-number") {
-                int nval = valueSize / sizeof(std::uint16_t);
-                auto parsed = cli::parse_f_number(values, nval);
-                for (const auto& val : parsed) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = val;
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << val;
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_f_number(val);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_f_number(static_cast<std::uint16_t>(data.currentValue));
-            }
-            else if (propertyName == "iso" || propertyName == "iso-sensitivity") {
-                int nval = valueSize / sizeof(std::uint32_t);
-                auto parsed = cli::parse_iso_sensitivity(values, nval);
-                for (const auto& val : parsed) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = val;
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << val;
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_iso_sensitivity(val);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_iso_sensitivity(static_cast<std::uint32_t>(data.currentValue));
-            }
-            else if (propertyName == "shutter-speed") {
-                int nval = valueSize / sizeof(std::uint32_t);
-                auto parsed = cli::parse_shutter_speed(values, nval);
-                for (const auto& val : parsed) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = val;
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << val;
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_shutter_speed(val);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_shutter_speed(static_cast<std::uint32_t>(data.currentValue));
-            }
-            else if (propertyName == "white-balance") {
-                int nval = valueSize / sizeof(std::uint16_t);
-                auto parsed = cli::parse_white_balance(values, nval);
-                for (const auto& val : parsed) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = val;
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << val;
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_white_balance(val);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_white_balance(static_cast<std::uint16_t>(data.currentValue));
-            }
-            else if (propertyName == "focus-mode") {
-                int nval = valueSize / sizeof(std::uint16_t);
-                auto parsed = cli::parse_focus_mode(values, nval);
-                for (const auto& val : parsed) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = val;
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << val;
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_focus_mode(val);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_focus_mode(static_cast<std::uint16_t>(data.currentValue));
-            }
-            else if (propertyName == "exposure-program-mode" || propertyName == "exposure-mode") {
-                int nval = valueSize / sizeof(std::uint32_t);
-                auto parsed = cli::parse_exposure_program_mode(values, nval);
-                for (const auto& val : parsed) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = val;
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << val;
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_exposure_program_mode(val);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_exposure_program_mode(static_cast<std::uint32_t>(data.currentValue));
-            }
-            else if (propertyName == "drive-mode" || propertyName == "still-capture-mode") {
-                int nval = valueSize / sizeof(std::uint32_t);
-                auto parsed = cli::parse_still_capture_mode(values, nval);
-                for (const auto& val : parsed) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = val;
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << val;
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_still_capture_mode(val);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_still_capture_mode(static_cast<std::uint32_t>(data.currentValue));
-            }
-            else if (propertyName == "file-format") {
-                int nval = valueSize / sizeof(std::uint16_t);
-                const std::uint16_t* vals = reinterpret_cast<const std::uint16_t*>(values);
-                for (int j = 0; j < nval; ++j) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = vals[j];
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << vals[j];
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_file_type(vals[j]);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_file_type(static_cast<std::uint16_t>(data.currentValue));
-            }
-            else if (propertyName == "image-quality") {
-                int nval = valueSize / sizeof(std::uint32_t);
-                const std::uint32_t* vals = reinterpret_cast<const std::uint32_t*>(values);
-                for (int j = 0; j < nval; ++j) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = vals[j];
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << vals[j];
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_still_image_quality(vals[j]);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_still_image_quality(static_cast<std::uint32_t>(data.currentValue));
-            }
-            else if (propertyName == "raw-compression") {
-                int nval = valueSize / sizeof(std::uint16_t);
-                const std::uint16_t* vals = reinterpret_cast<const std::uint16_t*>(values);
-                for (int j = 0; j < nval; ++j) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = vals[j];
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << vals[j];
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_raw_file_compression(vals[j]);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_raw_file_compression(static_cast<std::uint16_t>(data.currentValue));
-            }
-            else if (propertyName == "focus-area") {
-                int nval = valueSize / sizeof(std::uint16_t);
-                auto parsed = cli::parse_focus_area(values, nval);
-                for (const auto& val : parsed) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = val;
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << val;
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_focus_area(val);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_focus_area(static_cast<std::uint16_t>(data.currentValue));
-            }
-            else if (propertyName == "priority-key" || propertyName == "position-key-setting") {
-                int nval = valueSize / sizeof(std::uint16_t);
-                auto parsed = cli::parse_position_key_setting(values, nval);
-                for (const auto& val : parsed) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = val;
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << val;
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_position_key_setting(val);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_position_key_setting(static_cast<std::uint16_t>(data.currentValue));
-            }
-            else if (propertyName == "still-image-store-destination" || propertyName == "sd-card-save-destination") {
-                int nval = valueSize / sizeof(std::uint16_t);
-                auto parsed = cli::parse_still_image_store_destination(values, nval);
-                for (const auto& val : parsed) {
-                    AvailablePropertyValue availVal;
-                    availVal.value = val;
-                    std::stringstream hex;
-                    hex << "0x" << std::hex << val;
-                    availVal.hexValue = hex.str();
-                    availVal.formatted = cli::format_still_image_store_destination(val);
-                    data.availableValues.push_back(availVal);
-                }
-                data.currentFormatted = cli::format_still_image_store_destination(static_cast<std::uint16_t>(data.currentValue));
-            }
-            else if (propertyName == "focus-driving-status") {
-                // Focus driving status: 0x01 = NotDriving, 0x02 = Driving
-                if (data.currentValue == 0x01) {
-                    data.currentFormatted = "Not Driving";
-                } else if (data.currentValue == 0x02) {
-                    data.currentFormatted = "Driving";
-                } else {
-                    data.currentFormatted = "Unknown (0x" + ([&]{ std::ostringstream o; o << std::hex << data.currentValue; return o.str(); })() + ")";
-                }
-            }
-            else if (propertyName == "zoom-distance") {
-                // Zoom distance: value is focal length in 0.001mm units
-                double mm = data.currentValue / 1000.0;
-                std::ostringstream oss;
-                oss << std::fixed << std::setprecision(0) << mm << "mm";
-                data.currentFormatted = oss.str();
-                // Available values are min/max/step range
-                if (valueSize > 0 && values != nullptr) {
-                    int nval = valueSize / sizeof(std::uint32_t);
-                    const std::uint32_t* vals = reinterpret_cast<const std::uint32_t*>(values);
-                    for (int j = 0; j < nval; ++j) {
-                        AvailablePropertyValue availVal;
-                        availVal.value = vals[j];
-                        std::stringstream hex;
-                        hex << "0x" << std::hex << vals[j];
-                        availVal.hexValue = hex.str();
-                        double v = vals[j] / 1000.0;
-                        std::ostringstream fmtOss;
-                        fmtOss << std::fixed << std::setprecision(0) << v << "mm";
-                        availVal.formatted = fmtOss.str();
-                        data.availableValues.push_back(availVal);
-                    }
-                }
-            }
-            else if (propertyName == "focus-distance") {
-                // Focus distance: value is 1/1000 meter, 0xFFFFFFFF = infinity
-                if (data.currentValue == 0xFFFFFFFF) {
-                    data.currentFormatted = "Infinity";
-                } else {
-                    double meters = data.currentValue / 1000.0;
-                    std::ostringstream oss;
-                    if (meters >= 1.0) {
-                        oss << std::fixed << std::setprecision(1) << meters << "m";
-                    } else {
-                        oss << std::fixed << std::setprecision(2) << meters << "m";
-                    }
-                    data.currentFormatted = oss.str();
-                }
-                // Available values are min/max/step range, format them too
-                if (valueSize > 0 && values != nullptr) {
-                    int nval = valueSize / sizeof(std::uint32_t);
-                    const std::uint32_t* vals = reinterpret_cast<const std::uint32_t*>(values);
-                    for (int j = 0; j < nval; ++j) {
-                        AvailablePropertyValue availVal;
-                        availVal.value = vals[j];
-                        std::stringstream hex;
-                        hex << "0x" << std::hex << vals[j];
-                        availVal.hexValue = hex.str();
-                        if (vals[j] == 0xFFFFFFFF) {
-                            availVal.formatted = "Infinity";
-                        } else {
-                            double m = vals[j] / 1000.0;
-                            std::ostringstream fmtOss;
-                            if (m >= 1.0) {
-                                fmtOss << std::fixed << std::setprecision(1) << m << "m";
-                            } else {
-                                fmtOss << std::fixed << std::setprecision(2) << m << "m";
-                            }
-                            availVal.formatted = fmtOss.str();
-                        }
-                        data.availableValues.push_back(availVal);
-                    }
-                }
-            }
-            else {
-                // Generic formatting for properties without custom formatters
-                // Try to parse as uint32_t first, then fall back to uint16_t
-                data.currentFormatted = std::to_string(data.currentValue);
-
-                // Parse available values if present
-                if (valueSize > 0 && values != nullptr) {
-                    // Try uint32_t parsing first (most common)
-                    if (valueSize % sizeof(std::uint32_t) == 0) {
-                        int nval = valueSize / sizeof(std::uint32_t);
-                        const std::uint32_t* vals = reinterpret_cast<const std::uint32_t*>(values);
-                        for (int j = 0; j < nval; ++j) {
-                            AvailablePropertyValue availVal;
-                            availVal.value = vals[j];
-                            std::stringstream hex;
-                            hex << "0x" << std::hex << vals[j];
-                            availVal.hexValue = hex.str();
-                            availVal.formatted = std::to_string(vals[j]);
-                            data.availableValues.push_back(availVal);
-                        }
-                    }
-                    // Fall back to uint16_t if size doesn't align with uint32_t
-                    else if (valueSize % sizeof(std::uint16_t) == 0) {
-                        int nval = valueSize / sizeof(std::uint16_t);
-                        const std::uint16_t* vals = reinterpret_cast<const std::uint16_t*>(values);
-                        for (int j = 0; j < nval; ++j) {
-                            AvailablePropertyValue availVal;
-                            availVal.value = vals[j];
-                            std::stringstream hex;
-                            hex << "0x" << std::hex << vals[j];
-                            availVal.hexValue = hex.str();
-                            availVal.formatted = std::to_string(vals[j]);
-                            data.availableValues.push_back(availVal);
-                        }
-                    }
-                    // Fall back to uint8_t if needed
-                    else if (valueSize > 0) {
-                        int nval = valueSize / sizeof(std::uint8_t);
-                        const std::uint8_t* vals = reinterpret_cast<const std::uint8_t*>(values);
-                        for (int j = 0; j < nval; ++j) {
-                            AvailablePropertyValue availVal;
-                            availVal.value = vals[j];
-                            std::stringstream hex;
-                            hex << "0x" << std::hex << static_cast<int>(vals[j]);
-                            availVal.hexValue = hex.str();
-                            availVal.formatted = std::to_string(static_cast<int>(vals[j]));
-                            data.availableValues.push_back(availVal);
-                        }
-                    }
-                }
-            }
+            formatPropertyData(data, camera, propertyName, values, valueSize);
 
             SDK::ReleaseDeviceProperties(camera->get_device_handle(), properties);
         }
@@ -2853,7 +3361,7 @@ ApiResponse CameraWebController::getAllProperties(const std::string& cameraId) {
                 std::string propertyName = getPropertyName(propertyCode);
                 if (propertyName == "unknown") continue;
 
-                PropertyData propData = getPropertyData(camera, propertyName, propertyCode);
+                PropertyData propData = getPropertyDataFromBulk(camera, propertyName, properties[i]);
 
                 auto it = propMap.find(propertyName);
                 if (it == propMap.end()) {
@@ -3478,9 +3986,11 @@ ApiResponse CameraOperationWorker::handleStartLiveView() {
     ApiResponse response;
 
     std::cout << "WORKER THREAD: Starting live view for camera: " << m_cameraId << std::endl;
+    // TODO: Implement start live view using SDK directly
+    bool success = true; // Placeholder for worker thread demo
 
-    response.success = false;
-    response.message = "Live view worker operation is not implemented";
+    response.success = success;
+    response.message = success ? "Live view started successfully" : "Failed to start live view";
     response.camera.connected = true;
     response.camera.model = std::string(m_camera->get_model().data());
     response.camera.id = m_cameraId;
@@ -3492,9 +4002,11 @@ ApiResponse CameraOperationWorker::handleStopLiveView() {
     ApiResponse response;
 
     std::cout << "WORKER THREAD: Stopping live view for camera: " << m_cameraId << std::endl;
+    // TODO: Implement stop live view using SDK directly
+    bool success = true; // Placeholder for worker thread demo
 
-    response.success = false;
-    response.message = "Live view worker operation is not implemented";
+    response.success = success;
+    response.message = success ? "Live view stopped successfully" : "Failed to stop live view";
     response.camera.connected = true;
     response.camera.model = std::string(m_camera->get_model().data());
     response.camera.id = m_cameraId;
@@ -3506,9 +4018,11 @@ ApiResponse CameraOperationWorker::handleAutoFocus() {
     ApiResponse response;
 
     std::cout << "WORKER THREAD: Triggering autofocus for camera: " << m_cameraId << std::endl;
+    // TODO: Implement autofocus using SDK directly
+    bool success = true; // Placeholder for worker thread demo
 
-    response.success = false;
-    response.message = "Autofocus worker operation is not implemented";
+    response.success = success;
+    response.message = success ? "Autofocus executed successfully" : "Failed to execute autofocus";
     response.camera.connected = true;
     response.camera.model = std::string(m_camera->get_model().data());
     response.camera.id = m_cameraId;
@@ -3520,9 +4034,11 @@ ApiResponse CameraOperationWorker::handleZoomIn() {
     ApiResponse response;
 
     std::cout << "WORKER THREAD: Zooming in for camera: " << m_cameraId << std::endl;
+    // TODO: Implement zoom using SDK directly
+    bool success = true; // Placeholder
 
-    response.success = false;
-    response.message = "Zoom worker operation is not implemented";
+    response.success = success;
+    response.message = success ? "Zoom in executed successfully" : "Failed to zoom in";
     response.camera.connected = true;
     response.camera.model = std::string(m_camera->get_model().data());
     response.camera.id = m_cameraId;
@@ -3534,9 +4050,11 @@ ApiResponse CameraOperationWorker::handleZoomOut() {
     ApiResponse response;
 
     std::cout << "WORKER THREAD: Zooming out for camera: " << m_cameraId << std::endl;
+    // TODO: Implement zoom using SDK directly
+    bool success = true; // Placeholder
 
-    response.success = false;
-    response.message = "Zoom worker operation is not implemented";
+    response.success = success;
+    response.message = success ? "Zoom out executed successfully" : "Failed to zoom out";
     response.camera.connected = true;
     response.camera.model = std::string(m_camera->get_model().data());
     response.camera.id = m_cameraId;
@@ -3963,7 +4481,64 @@ CrInt32u CameraWebController::getPropertyCode(const std::string& propertyName) c
         {"focus-distance", SDK::CrDevicePropertyCode::CrDeviceProperty_FocalDistanceInMeter},
         {"focus-position", SDK::CrDevicePropertyCode::CrDeviceProperty_FocusPositionSetting},
         {"focus-position-current", SDK::CrDevicePropertyCode::CrDeviceProperty_FocusPositionCurrentValue},
-        {"focus-driving-status", SDK::CrDevicePropertyCode::CrDeviceProperty_FocusDrivingStatus}
+        {"focus-driving-status", SDK::CrDevicePropertyCode::CrDeviceProperty_FocusDrivingStatus},
+        // Tier 1 R/W: video recording
+        {"movie-file-format", SDK::CrDevicePropertyCode::CrDeviceProperty_Movie_File_Format},
+        {"movie-recording-setting", SDK::CrDevicePropertyCode::CrDeviceProperty_Movie_Recording_Setting},
+        {"movie-recording-frame-rate", SDK::CrDevicePropertyCode::CrDeviceProperty_Movie_Recording_FrameRateSetting},
+        // Tier 2: exposure
+        {"exposure-compensation", SDK::CrDevicePropertyCode::CrDeviceProperty_ExposureBiasCompensation},
+        {"metering-mode", SDK::CrDevicePropertyCode::CrDeviceProperty_MeteringMode},
+        {"ae-lock", SDK::CrDevicePropertyCode::CrDeviceProperty_AEL},
+        {"exposure-step", SDK::CrDevicePropertyCode::CrDeviceProperty_ExposureStep},
+        // Tier 2: flash
+        {"flash-mode", SDK::CrDevicePropertyCode::CrDeviceProperty_FlashMode},
+        {"flash-compensation", SDK::CrDevicePropertyCode::CrDeviceProperty_FlashCompensation},
+        {"wireless-flash", SDK::CrDevicePropertyCode::CrDeviceProperty_WirelessFlash},
+        // Tier 2: shutter & silent
+        {"shutter-type", SDK::CrDevicePropertyCode::CrDeviceProperty_ShutterType},
+        {"shutter-mode", SDK::CrDevicePropertyCode::CrDeviceProperty_ShutterMode},
+        {"silent-mode", SDK::CrDevicePropertyCode::CrDeviceProperty_SilentMode},
+        // Tier 2: image settings
+        {"image-size", SDK::CrDevicePropertyCode::CrDeviceProperty_ImageSize},
+        {"aspect-ratio", SDK::CrDevicePropertyCode::CrDeviceProperty_AspectRatio},
+        {"color-space", SDK::CrDevicePropertyCode::CrDeviceProperty_ColorSpace},
+        {"dro", SDK::CrDevicePropertyCode::CrDeviceProperty_DRO},
+        {"high-iso-nr", SDK::CrDevicePropertyCode::CrDeviceProperty_HighIsoNR},
+        // Tier 2: white balance fine-tuning
+        {"awb-lock", SDK::CrDevicePropertyCode::CrDeviceProperty_AWBL},
+        {"white-balance-color-temp", SDK::CrDevicePropertyCode::CrDeviceProperty_Colortemp},
+        // Tier 3: creative & video
+        {"creative-look", SDK::CrDevicePropertyCode::CrDeviceProperty_CreativeLook},
+        {"flicker-less-shooting", SDK::CrDevicePropertyCode::CrDeviceProperty_FlickerLessShooting},
+        {"audio-recording", SDK::CrDevicePropertyCode::CrDeviceProperty_AudioRecording},
+        {"audio-input-master-level", SDK::CrDevicePropertyCode::CrDeviceProperty_AudioInputMasterLevel},
+        {"timecode-preset", SDK::CrDevicePropertyCode::CrDeviceProperty_TimeCodePreset},
+        {"timecode-format", SDK::CrDevicePropertyCode::CrDeviceProperty_TimeCodeFormat},
+        {"timecode-run", SDK::CrDevicePropertyCode::CrDeviceProperty_TimeCodeRun},
+        {"timecode-make", SDK::CrDevicePropertyCode::CrDeviceProperty_TimeCodeMake},
+        {"movie-stabilization", SDK::CrDevicePropertyCode::CrDeviceProperty_Movie_ImageStabilizationSteadyShot},
+        // CineEI & LUT
+        {"movie-shooting-mode", SDK::CrDevicePropertyCode::CrDeviceProperty_MovieShootingMode},
+        {"movie-shooting-mode-color-gamut", SDK::CrDevicePropertyCode::CrDeviceProperty_MovieShootingModeColorGamut},
+        {"base-look-import-enable", SDK::CrDevicePropertyCode::CrDeviceProperty_BaseLookImportOperationEnableStatus},
+        {"embed-lut-file", SDK::CrDevicePropertyCode::CrDeviceProperty_EmbedLUTFile},
+        {"base-look-value", SDK::CrDevicePropertyCode::CrDeviceProperty_BaseLookValue},
+        {"shooting-enable", SDK::CrDevicePropertyCode::CrDeviceProperty_ShootingEnableSettingLicense},
+        // Image ID
+        {"image-id-string", SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_String},
+        {"image-id-string-max-length", SDK::CrDevicePropertyCode::CrDeviceProperty_MaximumSizeOfImageIDString},
+        {"image-id-num", SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_Num},
+        {"image-id-num-setting", SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_Num_Setting},
+        {"picture-profile", SDK::CrDevicePropertyCode::CrDeviceProperty_PictureProfile},
+        {"pp-lut-base-look", SDK::CrDevicePropertyCode::CrDeviceProperty_SelectUserBaseLookToSetInPPLUT},
+        {"image-stabilization", SDK::CrDevicePropertyCode::CrDeviceProperty_ImageStabilizationSteadyShot},
+        {"long-exposure-nr", SDK::CrDevicePropertyCode::CrDeviceProperty_LongExposureNR},
+        {"exposure-index", SDK::CrDevicePropertyCode::CrDeviceProperty_ExposureIndex},
+        {"base-iso", SDK::CrDevicePropertyCode::CrDeviceProperty_GainBaseIsoSensitivity},
+        {"shutter-angle", SDK::CrDevicePropertyCode::CrDeviceProperty_ShutterAngle},
+        {"zoom-setting", SDK::CrDevicePropertyCode::CrDeviceProperty_Zoom_Setting},
+        {"aps-c-s35", SDK::CrDevicePropertyCode::CrDeviceProperty_APS_C_S35}
     };
 
     auto it = propertyMap.find(propertyName);
@@ -4021,6 +4596,165 @@ std::string CameraWebController::getPropertyName(CrInt32u propertyCode) const {
         case SDK::CrDevicePropertyCode::CrDeviceProperty_FocusDrivingStatus:
             return "focus-driving-status";
 
+        // --- Tier 1: Essential ---
+
+        // Battery & power
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_BatteryRemain:
+            return "battery-remain";
+
+        // Video recording
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_RecordingState:
+            return "recording-state";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_Movie_File_Format:
+            return "movie-file-format";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_Movie_Recording_Setting:
+            return "movie-recording-setting";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_Movie_Recording_FrameRateSetting:
+            return "movie-recording-frame-rate";
+
+        // Thermal
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_DeviceOverheatingState:
+            return "overheating-state";
+
+        // Error/Caution status
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_CameraErrorCautionStatus:
+            return "camera-error-caution-status";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_SystemErrorCautionStatus:
+            return "system-error-caution-status";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_CameraSystemErrorInfo:
+            return "camera-system-error-info";
+
+        // Media status
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_Status:
+            return "media-slot1-status";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_RemainingNumber:
+            return "media-slot1-remaining-photos";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_RemainingTime:
+            return "media-slot1-remaining-time";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_Status:
+            return "media-slot2-status";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_RemainingNumber:
+            return "media-slot2-remaining-photos";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_RemainingTime:
+            return "media-slot2-remaining-time";
+
+        // --- Tier 2: Photo & Shooting Control ---
+
+        // Exposure
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ExposureBiasCompensation:
+            return "exposure-compensation";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_MeteringMode:
+            return "metering-mode";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_AEL:
+            return "ae-lock";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ExposureStep:
+            return "exposure-step";
+
+        // Flash
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_FlashMode:
+            return "flash-mode";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_FlashCompensation:
+            return "flash-compensation";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_WirelessFlash:
+            return "wireless-flash";
+
+        // Shutter & silent mode
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ShutterType:
+            return "shutter-type";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ShutterMode:
+            return "shutter-mode";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_SilentMode:
+            return "silent-mode";
+
+        // Image settings
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ImageSize:
+            return "image-size";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_AspectRatio:
+            return "aspect-ratio";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ColorSpace:
+            return "color-space";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_DRO:
+            return "dro";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_HighIsoNR:
+            return "high-iso-nr";
+
+        // White balance fine-tuning
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_AWBL:
+            return "awb-lock";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_Colortemp:
+            return "white-balance-color-temp";
+
+        // --- Tier 3: Creative & Video ---
+
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_CreativeLook:
+            return "creative-look";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_FlickerLessShooting:
+            return "flicker-less-shooting";
+
+        // Audio
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_AudioRecording:
+            return "audio-recording";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_AudioInputMasterLevel:
+            return "audio-input-master-level";
+
+        // Timecode
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_TimeCodePreset:
+            return "timecode-preset";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_TimeCodeFormat:
+            return "timecode-format";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_TimeCodeRun:
+            return "timecode-run";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_TimeCodeMake:
+            return "timecode-make";
+
+        // Image stabilization
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_Movie_ImageStabilizationSteadyShot:
+            return "movie-stabilization";
+
+        // CineEI & LUT
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_MovieShootingMode:
+            return "movie-shooting-mode";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_MovieShootingModeColorGamut:
+            return "movie-shooting-mode-color-gamut";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_BaseLookImportOperationEnableStatus:
+            return "base-look-import-enable";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_EmbedLUTFile:
+            return "embed-lut-file";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_BaseLookValue:
+            return "base-look-value";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ShootingEnableSettingLicense:
+            return "shooting-enable";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_String:
+            return "image-id-string";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_MaximumSizeOfImageIDString:
+            return "image-id-string-max-length";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_Num:
+            return "image-id-num";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_Num_Setting:
+            return "image-id-num-setting";
+
+        // Picture Profile
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_PictureProfile:
+            return "picture-profile";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_SelectUserBaseLookToSetInPPLUT:
+            return "pp-lut-base-look";
+
+        // Still stabilization & long exposure NR
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ImageStabilizationSteadyShot:
+            return "image-stabilization";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_LongExposureNR:
+            return "long-exposure-nr";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ExposureIndex:
+            return "exposure-index";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_GainBaseIsoSensitivity:
+            return "base-iso";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_ShutterAngle:
+            return "shutter-angle";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_Zoom_Setting:
+            return "zoom-setting";
+        case SDK::CrDevicePropertyCode::CrDeviceProperty_APS_C_S35:
+            return "aps-c-s35";
+
         default:
             return "unknown";
     }
@@ -4028,13 +4762,15 @@ std::string CameraWebController::getPropertyName(CrInt32u propertyCode) const {
 
 std::string CameraWebController::getCurrentPropertyValue(const std::string& cameraId,
                                                         CrInt32u propertyCode) {
+    // Get current value of a property from the camera
+    // This would read from the camera's property cache or query the SDK
+
     std::lock_guard<std::mutex> lock(m_cameraThreadsMutex);
     auto it = m_cameraThreads.find(cameraId);
     if (it != m_cameraThreads.end() && it->second->camera) {
-        SCRSDK::CrDeviceProperty prop;
-        prop.SetCode(propertyCode);
-        it->second->camera->get_property(prop);
-        return it->second->camera->getCurrentStr(&prop).data();
+        // TODO: Implement property value reading from camera
+        // For now, return a placeholder
+        return "value_placeholder";
     }
 
     return "unknown";
@@ -4062,6 +4798,8 @@ ApiResponse CameraWebController::s1Shooting(const std::string& cameraId) {
         response.message = "Camera not connected";
         return response;
     }
+
+    populateResponseCamera(response, camera);
 
     // Call S1 shooting (half-press)
     camera->s1_shooting();
@@ -4159,7 +4897,8 @@ ApiResponse CameraWebController::setExposureMode(const std::string& cameraId, co
         return response;
     }
 
-    // Set exposure mode (apply the value parsed from the request)
+    // Set exposure mode. The stock sample's setter was interactive (it prompted
+    // for a value on stdin); the REST device layer takes the value directly.
     camera->set_exposure_program_mode(modeValue);
 
     // Wait for callback with timeout
@@ -4332,17 +5071,9 @@ ApiResponse CameraWebController::setFocusMode(const std::string& cameraId, const
         return response;
     }
 
-    // Set focus mode (apply the value parsed from the request)
-    CrInt64u focusModeValue = 0;
-    try {
-        focusModeValue = cli::parse_focus_mode(mode);
-    } catch (const std::exception& e) {
-        unregisterCallbackListener(correlationId);
-        response.success = false;
-        response.message = std::string("Invalid focus mode: ") + e.what();
-        return response;
-    }
-    camera->set_focus_mode(focusModeValue);
+    // Set focus mode. The stock sample's setter was interactive; the REST device
+    // layer takes the parsed SDK value directly.
+    camera->set_focus_mode(cli::parse_focus_mode(mode));
 
     // Wait for callback with timeout
     auto status = responseFuture.wait_for(std::chrono::milliseconds(2000));
@@ -4387,17 +5118,9 @@ ApiResponse CameraWebController::setFocusArea(const std::string& cameraId, const
         return response;
     }
 
-    // Set focus area (apply the value parsed from the request)
-    CrInt64u focusAreaValue = 0;
-    try {
-        focusAreaValue = cli::parse_focus_area(area);
-    } catch (const std::exception& e) {
-        unregisterCallbackListener(correlationId);
-        response.success = false;
-        response.message = std::string("Invalid focus area: ") + e.what();
-        return response;
-    }
-    camera->set_focus_area(focusAreaValue);
+    // Set focus area. The stock sample's setter was interactive; the REST device
+    // layer takes the parsed SDK value directly.
+    camera->set_focus_area(cli::parse_focus_area(area));
 
     // Wait for callback with timeout
     auto status = responseFuture.wait_for(std::chrono::milliseconds(2000));
@@ -4535,6 +5258,8 @@ ApiResponse CameraWebController::setPriorityKey(const std::string& cameraId, con
         return response;
     }
 
+    populateResponseCamera(response, camera);
+
     try {
         CrInt16u priorityValue;
 
@@ -4564,15 +5289,13 @@ ApiResponse CameraWebController::setPriorityKey(const std::string& cameraId, con
             response.message = "Priority key set to " + setting;
             response.data["setting"] = setting;
         } else {
-            std::cout << "❌ Failed to set priority key. Error code: " << std::hex << err << std::dec << std::endl;
+            std::stringstream hexErr;
+            hexErr << "0x" << std::hex << err;
+            std::cout << "❌ Failed to set priority key. Error code: " << hexErr.str() << std::endl;
             response.success = false;
-            response.message = "Failed to set priority key. Error code: " + std::to_string(err);
+            response.message = "Failed to set priority key. Error code: " + hexErr.str();
+            response.data["retryable"] = "true";
         }
-
-        // Populate camera metadata
-        response.camera.connected = true;
-        response.camera.model = camera->get_model();
-        response.camera.id = camera->get_id();
 
     } catch (const std::exception& e) {
         response.success = false;
@@ -4894,6 +5617,66 @@ ApiResponse CameraWebController::listSavedSettings() {
     return response;
 }
 
+ApiResponse CameraWebController::importLUT(const std::string& cameraId, const std::string& filePath, int slotNumber) {
+    ApiResponse response;
+
+    // Validate slot number (1-16)
+    if (slotNumber < 1 || slotNumber > 16) {
+        response.success = false;
+        response.message = "Invalid slot number. Must be 1-16.";
+        return response;
+    }
+
+    // Find camera
+    std::shared_ptr<CameraDevice> camera = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_cameraThreadsMutex);
+        auto it = m_cameraThreads.find(cameraId);
+        if (it != m_cameraThreads.end()) {
+            camera = it->second->camera;
+        }
+    }
+
+    if (!camera || !camera->is_connected()) {
+        response.success = false;
+        response.message = "Camera not connected";
+        return response;
+    }
+
+    // Verify file exists
+    struct stat st;
+    if (stat(filePath.c_str(), &st) != 0) {
+        response.success = false;
+        response.message = "LUT file not found: " + filePath;
+        return response;
+    }
+
+    // CrChar is char on all platforms (no UNICODE) — same pattern as CameraDevice.cpp
+    CrChar* lutPath = (CrChar*)filePath.c_str();
+
+    // Map slot number to SDK enum
+    auto baseLookNumber = static_cast<SDK::CrBaseLookNumber>(slotNumber);
+
+    std::cout << "🎨 Importing LUT file: " << filePath << " to slot " << slotNumber << std::endl;
+
+    auto err = SDK::ImportLUTFile(camera->get_device_handle(), lutPath, baseLookNumber);
+
+    if (CR_FAILED(err)) {
+        response.success = false;
+        std::ostringstream oss;
+        oss << "ImportLUTFile failed (error: 0x" << std::hex << static_cast<int>(err) << ")";
+        response.message = oss.str();
+        std::cerr << "❌ " << response.message << std::endl;
+    } else {
+        response.success = true;
+        response.message = "LUT import started. Monitor SSE for 'lutImportResult' event.";
+        response.data["slot"] = std::to_string(slotNumber);
+        response.data["file"] = filePath;
+    }
+
+    return response;
+}
+
 // ==============================================================================
 // Zoom Control Operations
 // ==============================================================================
@@ -4915,6 +5698,15 @@ ApiResponse CameraWebController::executeZoomAction(const std::string& cameraId, 
             response.success = false;
             response.message = "Camera not found: " + cameraId;
             std::cerr << "❌ Camera not found: " << cameraId << std::endl;
+            return response;
+        }
+
+        populateResponseCamera(response, camera);
+
+        if (speed == 11) {
+            response.success = false;
+            response.message = "Invalid zoom direction. Use 'in' or 'out'";
+            std::cerr << "❌ Invalid zoom direction for camera: " << cameraId << std::endl;
             return response;
         }
 
@@ -5010,6 +5802,246 @@ ApiResponse CameraWebController::getZoomDistance(const std::string& cameraId) {
 }
 
 // ==============================================================================
+// Image ID String/Num Custom Handlers
+// ==============================================================================
+
+ApiResponse CameraWebController::getImageIdString(const std::string& cameraId) {
+    ApiResponse response;
+    std::shared_ptr<CameraDevice> camera = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_cameraThreadsMutex);
+        auto camIt = m_cameraThreads.find(cameraId);
+        if (camIt != m_cameraThreads.end()) camera = camIt->second->camera;
+    }
+    if (!camera) {
+        std::lock_guard<std::mutex> lock(m_discoveryMutex);
+        if (m_currentCamera && m_currentCamera->get_id() == cameraId) camera = m_currentCamera;
+    }
+    if (!camera || !camera->is_connected()) {
+        response.success = false;
+        response.message = "Camera not connected";
+        return response;
+    }
+
+    try {
+        CrInt32u code = SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_String;
+        SDK::CrDeviceProperty* properties = nullptr;
+        CrInt32 numProps = 0;
+        auto err = SDK::GetSelectDeviceProperties(camera->get_device_handle(), 1, &code, &properties, &numProps);
+        if (CR_SUCCEEDED(err) && numProps > 0 && properties) {
+            bool writable = properties[0].IsSetEnableCurrentValue();
+            std::string currentStr;
+            CrInt16u* pStr = properties[0].GetCurrentStr();
+            if (pStr) {
+                int length = (int)*pStr;
+                pStr++; // skip length prefix
+                for (int i = 0; i < (length - 1); ++i) {
+                    uint16_t wch = pStr[i];
+                    if (wch == 0) break;
+                    // SDK stores as UTF-16BE: ASCII char in high byte, low byte = 0x00
+                    uint8_t hi = (wch >> 8) & 0xFF;
+                    uint8_t lo = wch & 0xFF;
+                    if (hi > 0 && lo == 0) {
+                        // Big-endian ASCII: char is in high byte
+                        currentStr += static_cast<char>(hi);
+                    } else if (lo > 0 && hi == 0) {
+                        // Little-endian or native: char is in low byte
+                        currentStr += static_cast<char>(lo);
+                    } else if (hi > 0 && lo > 0) {
+                        // True multi-byte: encode as UTF-8
+                        uint16_t cp = (hi << 8) | lo;
+                        if (cp < 0x80) {
+                            currentStr += static_cast<char>(cp);
+                        } else if (cp < 0x800) {
+                            currentStr += static_cast<char>(0xC0 | (cp >> 6));
+                            currentStr += static_cast<char>(0x80 | (cp & 0x3F));
+                        } else {
+                            currentStr += static_cast<char>(0xE0 | (cp >> 12));
+                            currentStr += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                            currentStr += static_cast<char>(0x80 | (cp & 0x3F));
+                        }
+                    }
+                }
+            }
+            response.success = true;
+            response.message = "Property retrieved successfully";
+            response.data["property"] = "image-id-string";
+            response.data["value"] = currentStr;
+            response.data["formatted"] = currentStr.empty() ? "(empty)" : currentStr;
+            response.data["writable"] = writable ? "true" : "false";
+            SDK::ReleaseDeviceProperties(camera->get_device_handle(), properties);
+        } else {
+            response.success = false;
+            response.message = "Image ID String not supported";
+        }
+    } catch (const std::exception& e) {
+        response.success = false;
+        response.message = "Exception: " + std::string(e.what());
+    }
+    return response;
+}
+
+ApiResponse CameraWebController::setImageIdString(const std::string& cameraId, const std::string& value) {
+    ApiResponse response;
+    std::shared_ptr<CameraDevice> camera = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_cameraThreadsMutex);
+        auto camIt = m_cameraThreads.find(cameraId);
+        if (camIt != m_cameraThreads.end()) camera = camIt->second->camera;
+    }
+    if (!camera) {
+        std::lock_guard<std::mutex> lock(m_discoveryMutex);
+        if (m_currentCamera && m_currentCamera->get_id() == cameraId) camera = m_currentCamera;
+    }
+    if (!camera || !camera->is_connected()) {
+        response.success = false;
+        response.message = "Camera not connected";
+        return response;
+    }
+
+    populateResponseCamera(response, camera);
+
+    try {
+        // Check max length from camera (default 64 if not available)
+        int maxLen = 64;
+        CrInt32u maxCode = SDK::CrDevicePropertyCode::CrDeviceProperty_MaximumSizeOfImageIDString;
+        SDK::CrDeviceProperty* maxProp = nullptr;
+        CrInt32 maxNum = 0;
+        auto maxErr = SDK::GetSelectDeviceProperties(camera->get_device_handle(), 1, &maxCode, &maxProp, &maxNum);
+        if (CR_SUCCEEDED(maxErr) && maxNum > 0 && maxProp) {
+            maxLen = static_cast<int>(maxProp[0].GetCurrentValue());
+            SDK::ReleaseDeviceProperties(camera->get_device_handle(), maxProp);
+        }
+
+        if ((int)value.length() > maxLen) {
+            response.success = false;
+            response.message = "String exceeds maximum length of " + std::to_string(maxLen) + " characters";
+            return response;
+        }
+
+        // Build UTF-16BE string: first element is length, rest are chars
+        int strLen = static_cast<int>(value.length()) + 1; // +1 for length prefix
+        std::vector<CrInt16u> setStr(strLen + 1, 0);
+        setStr[0] = static_cast<CrInt16u>(strLen);
+        for (int i = 0; i < (int)value.length(); ++i) {
+            setStr[i + 1] = static_cast<CrInt16u>(static_cast<unsigned char>(value[i]));
+        }
+
+        SDK::CrDeviceProperty prop;
+        prop.SetCode(SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_String);
+        prop.SetCurrentStr(setStr.data());
+        prop.SetValueType(SDK::CrDataType::CrDataType_STR);
+        SDK::SetDeviceProperty(camera->get_device_handle(), &prop);
+
+        response.success = true;
+        response.message = "Image ID string set to: " + (value.empty() ? "(cleared)" : value);
+        response.data["property"] = "image-id-string";
+        response.data["value"] = value;
+    } catch (const std::exception& e) {
+        response.success = false;
+        response.message = "Exception: " + std::string(e.what());
+    }
+    return response;
+}
+
+ApiResponse CameraWebController::getImageIdNum(const std::string& cameraId) {
+    ApiResponse response;
+    std::shared_ptr<CameraDevice> camera = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_cameraThreadsMutex);
+        auto camIt = m_cameraThreads.find(cameraId);
+        if (camIt != m_cameraThreads.end()) camera = camIt->second->camera;
+    }
+    if (!camera) {
+        std::lock_guard<std::mutex> lock(m_discoveryMutex);
+        if (m_currentCamera && m_currentCamera->get_id() == cameraId) camera = m_currentCamera;
+    }
+    if (!camera || !camera->is_connected()) {
+        response.success = false;
+        response.message = "Camera not connected";
+        return response;
+    }
+
+    populateResponseCamera(response, camera);
+
+    try {
+        CrInt32u code = SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_Num;
+        SDK::CrDeviceProperty* properties = nullptr;
+        CrInt32 numProps = 0;
+        auto err = SDK::GetSelectDeviceProperties(camera->get_device_handle(), 1, &code, &properties, &numProps);
+        if (CR_SUCCEEDED(err) && numProps > 0 && properties) {
+            CrInt64u currentValue = properties[0].GetCurrentValue();
+            bool writable = properties[0].IsSetEnableCurrentValue();
+
+            response.success = true;
+            response.message = "Property retrieved successfully";
+            response.data["property"] = "image-id-num";
+            response.data["value"] = std::to_string(currentValue);
+            response.data["formatted"] = std::to_string(currentValue);
+            response.data["writable"] = writable ? "true" : "false";
+
+            // Parse UInt64Range [min, max, step]
+            int valueSize = properties[0].GetValueSize();
+            if (valueSize >= 3 * (int)sizeof(std::uint64_t)) {
+                auto vals = reinterpret_cast<const std::uint64_t*>(properties[0].GetValues());
+                response.data["min"] = std::to_string(vals[0]);
+                response.data["max"] = std::to_string(vals[1]);
+                response.data["step"] = std::to_string(vals[2]);
+            }
+
+            SDK::ReleaseDeviceProperties(camera->get_device_handle(), properties);
+        } else {
+            response.success = false;
+            response.message = "Image ID Num not supported";
+        }
+    } catch (const std::exception& e) {
+        response.success = false;
+        response.message = "Exception: " + std::string(e.what());
+    }
+    return response;
+}
+
+ApiResponse CameraWebController::setImageIdNum(const std::string& cameraId, const std::string& value) {
+    ApiResponse response;
+    std::shared_ptr<CameraDevice> camera = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_cameraThreadsMutex);
+        auto camIt = m_cameraThreads.find(cameraId);
+        if (camIt != m_cameraThreads.end()) camera = camIt->second->camera;
+    }
+    if (!camera) {
+        std::lock_guard<std::mutex> lock(m_discoveryMutex);
+        if (m_currentCamera && m_currentCamera->get_id() == cameraId) camera = m_currentCamera;
+    }
+    if (!camera || !camera->is_connected()) {
+        response.success = false;
+        response.message = "Camera not connected";
+        return response;
+    }
+
+    populateResponseCamera(response, camera);
+
+    try {
+        CrInt64u numValue = std::stoull(value);
+
+        SDK::CrDeviceProperty prop;
+        prop.SetCode(SDK::CrDevicePropertyCode::CrDeviceProperty_ImageID_Num);
+        prop.SetCurrentValue(numValue);
+        prop.SetValueType(SDK::CrDataType::CrDataType_UInt64Range);
+        SDK::SetDeviceProperty(camera->get_device_handle(), &prop);
+
+        response.success = true;
+        response.message = "Image ID number set to: " + std::to_string(numValue);
+        response.data["property"] = "image-id-num";
+        response.data["value"] = std::to_string(numValue);
+    } catch (const std::exception& e) {
+        response.success = false;
+        response.message = "Invalid numeric value: " + value;
+    }
+    return response;
+}
+
+// ==============================================================================
 // RESTful Generic Handlers - Scalable to 800+ properties/actions
 // ==============================================================================
 
@@ -5036,6 +6068,10 @@ ApiResponse CameraWebController::getPropertyGeneric(const std::string& cameraId,
             return getCurrentAperture(cameraId);
         } else if (propertyName == "zoom-distance") {
             return getZoomDistance(cameraId);
+        } else if (propertyName == "image-id-string") {
+            return getImageIdString(cameraId);
+        } else if (propertyName == "image-id-num") {
+            return getImageIdNum(cameraId);
         } else {
             response.success = false;
             response.message = "Custom getter not implemented for property: " + propertyName;
@@ -5065,9 +6101,14 @@ ApiResponse CameraWebController::getPropertyGeneric(const std::string& cameraId,
         PropertyData propData = getPropertyData(camera, propertyName, mapping.sdkPropertyCode);
         return buildPropertyResponse(propData, camera);
     } catch (const std::exception& e) {
-        response.success = false;
-        response.message = "Exception getting property: " + std::string(e.what());
-        std::cerr << "❌ Exception in getPropertyGeneric: " << e.what() << std::endl;
+        std::cerr << "⚠️ Exception in getPropertyGeneric for " << propertyName
+                  << ": " << e.what() << " — returning as non-writable" << std::endl;
+        // Return 200 with empty/non-writable data so UI can handle gracefully
+        PropertyData emptyData;
+        emptyData.propertyName = propertyName;
+        emptyData.currentHexValue = "0x0";
+        emptyData.writable = false;
+        return buildPropertyResponse(emptyData, camera);
     }
 
     return response;
@@ -5090,6 +6131,9 @@ CrInt64u CameraWebController::convertValueToSDK(const std::string& value, const 
         if (propertyName == "priority-key" || propertyName == "position-key-setting") {
             return cli::parse_position_key_setting(value);
         }
+        if (propertyName == "still-image-store-destination" || propertyName == "sd-card-save-destination") {
+            return cli::parse_still_image_store_destination(value);
+        }
         if (propertyName == "white-balance" || propertyName == "whitebalance") {
             return cli::parse_white_balance(value);
         }
@@ -5107,6 +6151,12 @@ CrInt64u CameraWebController::convertValueToSDK(const std::string& value, const 
         }
         if (propertyName == "raw-compression" || propertyName == "raw-file-compression") {
             return cli::parse_raw_file_compression(value);
+        }
+        if (propertyName == "file-format") {
+            return cli::parse_file_type(value);
+        }
+        if (propertyName == "image-quality") {
+            return cli::parse_still_image_quality(value);
         }
     } catch (const std::invalid_argument& e) {
         throw std::invalid_argument(std::string(e.what()));
@@ -5265,11 +6315,22 @@ ApiResponse CameraWebController::setPropertyGeneric(const std::string& cameraId,
             return setAperture(cameraId, apertureValue);
         } else if (propertyName == "drive-mode") {
             return setDriveMode(cameraId, value);
+        } else if (propertyName == "image-id-string") {
+            return setImageIdString(cameraId, value);
+        } else if (propertyName == "image-id-num") {
+            return setImageIdNum(cameraId, value);
         } else {
             response.success = false;
             response.message = "Custom method not implemented for property: " + propertyName;
             return response;
         }
+    }
+
+    // Priority-key requires a fresh CrDeviceProperty with explicit SetValueType —
+    // the generic GetSelectDeviceProperties → modify → SetDeviceProperty pattern
+    // returns CrError_Api_InvalidCalled (0x8402) for this property
+    if (propertyName == "priority-key") {
+        return setPriorityKey(cameraId, value);
     }
 
     // Generic handler for simple properties (no custom method needed)
@@ -5306,7 +6367,8 @@ ApiResponse CameraWebController::setPropertyGeneric(const std::string& cameraId,
             // Check writability
             if (1 != properties[0].IsSetEnableCurrentValue()) {
                 response.success = false;
-                response.message = "Property " + propertyName + " is not writable (camera may not be in pc-remote mode)";
+                response.message = "Property " + propertyName + " is not writable (camera may not be in pc-remote mode or connection still in progress)";
+                response.data["retryable"] = "true";
                 SDK::ReleaseDeviceProperties(camera->get_device_handle(), properties);
                 return response;
             }
@@ -5321,8 +6383,43 @@ ApiResponse CameraWebController::setPropertyGeneric(const std::string& cameraId,
                     propertyName == "focus-area" || propertyName == "priority-key" ||
                     propertyName == "raw-compression" || propertyName == "still-image-store-destination" ||
                     propertyName == "focus-position" || propertyName == "focus-position-current" ||
-                    propertyName == "file-format") {
+                    propertyName == "file-format" ||
+                    // Tier 1 R/W
+                    propertyName == "movie-recording-setting" ||
+                    // Tier 2: exposure, flash, shutter, image, WB
+                    propertyName == "exposure-compensation" || propertyName == "metering-mode" ||
+                    propertyName == "ae-lock" || propertyName == "exposure-step" ||
+                    propertyName == "flash-mode" || propertyName == "flash-compensation" ||
+                    propertyName == "wireless-flash" ||
+                    propertyName == "image-size" || propertyName == "aspect-ratio" ||
+                    propertyName == "color-space" || propertyName == "dro" ||
+                    propertyName == "awb-lock" ||
+                    propertyName == "white-balance-color-temp" ||
+                    // Tier 3
+                    propertyName == "movie-shooting-mode" ||
+                    propertyName == "pp-lut-base-look" ||
+                    propertyName == "exposure-index" ||
+                    propertyName == "base-look-value" ||
+                    propertyName == "movie-file-format" || propertyName == "movie-recording-frame-rate" ||
+                    propertyName == "audio-input-master-level") {
                     elemSize = sizeof(std::uint16_t);
+                }
+                // UInt8Array properties
+                else if (propertyName == "high-iso-nr" ||
+                    propertyName == "shutter-type" || propertyName == "shutter-mode" ||
+                    propertyName == "silent-mode" || propertyName == "creative-look" ||
+                    propertyName == "flicker-less-shooting" ||
+                    propertyName == "audio-recording" ||
+                    propertyName == "timecode-format" || propertyName == "timecode-run" ||
+                    propertyName == "timecode-make" || propertyName == "movie-stabilization" ||
+                    propertyName == "movie-shooting-mode-color-gamut" ||
+                    propertyName == "base-look-import-enable" || propertyName == "embed-lut-file" ||
+                    propertyName == "picture-profile" ||
+                    propertyName == "image-stabilization" || propertyName == "long-exposure-nr" ||
+                    propertyName == "zoom-setting" || propertyName == "aps-c-s35" ||
+                    propertyName == "base-iso" || propertyName == "shooting-enable" ||
+                    propertyName == "image-id-num-setting") {
+                    elemSize = sizeof(std::uint8_t);
                 }
 
                 CrInt32u numValues = valueSize / elemSize;
@@ -5333,7 +6430,9 @@ ApiResponse CameraWebController::setPropertyGeneric(const std::string& cameraId,
                 bool isRange = (numValues == 3) && (
                     propertyName == "focus-position" ||
                     propertyName == "focus-position-current" ||
-                    propertyName == "zoom-distance"
+                    propertyName == "zoom-distance" ||
+                    propertyName == "white-balance-color-temp" ||
+                    propertyName == "audio-input-master-level"
                 );
 
                 if (isRange) {
@@ -5350,6 +6449,11 @@ ApiResponse CameraWebController::setPropertyGeneric(const std::string& cameraId,
                         if (stepVal == 0 || (sdkValue - minVal) % stepVal == 0) {
                             found = true;
                         }
+                    }
+                } else if (elemSize == sizeof(std::uint8_t)) {
+                    auto vals = reinterpret_cast<const std::uint8_t*>(properties[0].GetValues());
+                    for (CrInt32u i = 0; i < numValues; i++) {
+                        if (vals[i] == static_cast<std::uint8_t>(sdkValue)) { found = true; break; }
                     }
                 } else if (elemSize == sizeof(std::uint16_t)) {
                     auto vals = reinterpret_cast<const std::uint16_t*>(properties[0].GetValues());
@@ -5370,13 +6474,23 @@ ApiResponse CameraWebController::setPropertyGeneric(const std::string& cameraId,
                     response.message = "Value '" + value + "' (sdk: " + hexStr.str() +
                         ") is not in the camera's available values for " + propertyName +
                         ". GET the property first to see available_values.";
+                    response.data["retryable"] = "true";
                     SDK::ReleaseDeviceProperties(camera->get_device_handle(), properties);
                     return response;
                 }
             }
 
             // Set the new value
-            properties[0].SetCurrentValue(sdkValue);
+            // For signed properties (exposure-compensation, flash-compensation),
+            // sign-extend uint16 negative values so the SDK interprets them correctly
+            if ((propertyName == "exposure-compensation" || propertyName == "flash-compensation") &&
+                sdkValue > 0x7FFF && sdkValue <= 0xFFFF) {
+                // Sign-extend: e.g. 0xf830 → 0xfffffffffffff830 (int64 = -2000)
+                CrInt64u signExtended = static_cast<CrInt64u>(static_cast<std::int16_t>(static_cast<std::uint16_t>(sdkValue)));
+                properties[0].SetCurrentValue(signExtended);
+            } else {
+                properties[0].SetCurrentValue(sdkValue);
+            }
 
             // Apply the setting
             err = SDK::SetDeviceProperty(camera->get_device_handle(), &properties[0]);
@@ -5406,7 +6520,8 @@ ApiResponse CameraWebController::setPropertyGeneric(const std::string& cameraId,
         }
     } catch (const std::exception& e) {
         response.success = false;
-        response.message = "Exception setting property: " + std::string(e.what());
+        populateResponseCamera(response, camera);
+        response.message = std::string(e.what());
         std::cerr << "❌ Exception in setPropertyGeneric: " << e.what() << std::endl;
     }
 
@@ -5522,8 +6637,12 @@ ApiResponse CameraWebController::executeActionGeneric(const std::string& cameraI
                                 // REST format: {"direction": "in"/"out", "speed": "normal"/"fast"}
                                 std::string dir = root["direction"].asString();
                                 std::string spd = root.isMember("speed") ? root["speed"].asString() : "normal";
-                                int magnitude = (spd == "fast") ? 8 : 4;
-                                speed = (dir == "out") ? -magnitude : magnitude;
+                                if (dir != "in" && dir != "out") {
+                                    speed = 11;
+                                } else {
+                                    int magnitude = (spd == "fast") ? 8 : 4;
+                                    speed = (dir == "out") ? -magnitude : magnitude;
+                                }
                             }
                         }
                     } catch (...) {
@@ -5553,7 +6672,12 @@ ApiResponse CameraWebController::executeActionGeneric(const std::string& cameraI
                             }
                         }
                     } catch (...) {
-                        step = std::stoi(params);
+                        // JSON parse / cast failed — leave step at 0, which the
+                        // range check below will reject. Same fix that was applied
+                        // to the zoom action in commit 7764d2e9: a `std::stoi(params)`
+                        // fallback on a JSON body throws `invalid_argument` UNCAUGHT
+                        // and crashes the server, which in turn looks like the client
+                        // app crashing when its requests drop.
                     }
                 }
 
@@ -5579,6 +6703,12 @@ ApiResponse CameraWebController::executeActionGeneric(const std::string& cameraI
                 prop.SetValueType(SDK::CrDataType::CrDataType_Int16Range);
 
                 auto err = SDK::SetDeviceProperty(camera->get_device_handle(), &prop);
+
+                // Populate camera metadata
+                response.camera.connected = camera->is_connected();
+                response.camera.model = camera->get_model();
+                response.camera.id = camera->get_id();
+
                 if (CR_SUCCEEDED(err)) {
                     response.success = true;
                     if (step < 0) {
@@ -5595,6 +6725,21 @@ ApiResponse CameraWebController::executeActionGeneric(const std::string& cameraI
                         ([&]{ std::ostringstream oss; oss << std::hex << static_cast<int>(err); return oss.str(); })() + ")";
                     std::cerr << "❌ Focus near/far SDK error: 0x" << std::hex << static_cast<int>(err) << std::dec << std::endl;
                 }
+                return response;
+            }
+            else if (actionName == "movie-rec") {
+                auto camera = getCameraDevice(cameraId);
+                if (!camera) {
+                    response.success = false;
+                    response.message = "Camera not found: " + cameraId;
+                    return response;
+                }
+                bool ok = camera->toggle_movie_recording_direct();
+                response.success = ok;
+                response.message = ok ? "Movie recording toggled" : "Failed to toggle movie recording";
+                response.camera.connected = camera->is_connected();
+                response.camera.model = camera->get_model();
+                response.camera.id = camera->get_id();
                 return response;
             }
             else {

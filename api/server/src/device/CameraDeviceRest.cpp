@@ -14,6 +14,7 @@
 #endif
 
 #include "CameraDeviceRest.h"
+#include "CrDebugString.h"  // stock: CrErrorString, for the generic warning event
 
 #include <chrono>
 #include <cstdlib>
@@ -356,6 +357,8 @@ CameraDeviceRest::ContentsListResult CameraDeviceRest::list_remote_transfer_cont
 
     release_contents_info(slotIndex);
 
+    // Get all contents from the slot. CrGetContentsInfoListType_All returns every
+    // content regardless of the (ignored) date argument.
     SDK::CrCaptureDate dummyCaptureDate;
     CrInt32u contentsInfoListNum = 0;
     SDK::CrError ret = SDK::GetRemoteTransferContentsInfoList(
@@ -441,6 +444,141 @@ CameraDeviceRest::FileDownloadResult CameraDeviceRest::download_remote_transfer_
 
     result.success = true;
     result.message = "Download started (remote-transfer)";
+    return result;
+}
+
+// RemoteTransfer compressed (thumbnail/screennail) downloads: async
+// GetRemoteTransferContentsCompressedDataFile. Progress is delivered via
+// OnNotifyRemoteTransferResult (SSE), with the same disk-polling fallback as
+// the full-file path.
+CameraDeviceRest::FileDownloadResult CameraDeviceRest::download_remote_transfer_thumbnail(
+    int slot_number, CrInt32u content_id, CrInt32u file_id, const std::string& save_path) {
+    FileDownloadResult result;
+    result.success = false;
+    result.progress_percent = 0;
+
+    SDK::CrSlotNumber slotNumber;
+    if (slot_number == 1) slotNumber = SDK::CrSlotNumber_Slot1;
+    else if (slot_number == 2) slotNumber = SDK::CrSlotNumber_Slot2;
+    else { result.error_message = "Invalid slot number. Use 1 or 2."; return result; }
+
+    if (!save_path.empty()) set_save_info(save_path, "", -1, nullptr);
+
+    m_getContentsDataStartFlg = true;
+    std::string effectiveSaveDir = save_path.empty() ? m_savePath : save_path;
+    auto preSnapshot = snapshotImageFiles(effectiveSaveDir);
+
+    SDK::CrError ret = SDK::GetRemoteTransferContentsCompressedDataFile(
+        m_deviceHandle, slotNumber, content_id, file_id,
+        SDK::CrGetContentsCompressedDataType_Thumbnail, nullptr, nullptr);
+
+    if (ret != SDK::CrError_None) {
+        char hex_buf[32];
+        snprintf(hex_buf, sizeof(hex_buf), "0x%08X", static_cast<unsigned int>(ret));
+        result.error_message = std::string("Failed to start thumbnail download: ") + hex_buf;
+        m_getContentsDataStartFlg = false;
+        return result;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(m_pendingTransfersMtx);
+        m_pendingTransfers.push_back(
+            {effectiveSaveDir, std::move(preSnapshot), std::chrono::steady_clock::now()});
+    }
+    startTransferPolling();
+
+    result.success = true;
+    result.message = "Thumbnail download started. Listen for transferProgress SSE events for completion.";
+    return result;
+}
+
+CameraDeviceRest::FileDownloadResult CameraDeviceRest::download_remote_transfer_screennail(
+    int slot_number, CrInt32u content_id, CrInt32u file_id, const std::string& save_path) {
+    FileDownloadResult result;
+    result.success = false;
+    result.progress_percent = 0;
+
+    SDK::CrSlotNumber slotNumber;
+    if (slot_number == 1) slotNumber = SDK::CrSlotNumber_Slot1;
+    else if (slot_number == 2) slotNumber = SDK::CrSlotNumber_Slot2;
+    else { result.error_message = "Invalid slot number. Use 1 or 2."; return result; }
+
+    if (!save_path.empty()) set_save_info(save_path, "", -1, nullptr);
+
+    m_getContentsDataStartFlg = true;
+    std::string effectiveSaveDir = save_path.empty() ? m_savePath : save_path;
+    auto preSnapshot = snapshotImageFiles(effectiveSaveDir);
+
+    SDK::CrError ret = SDK::GetRemoteTransferContentsCompressedDataFile(
+        m_deviceHandle, slotNumber, content_id, file_id,
+        SDK::CrGetContentsCompressedDataType_Screennail, nullptr, nullptr);
+
+    if (ret != SDK::CrError_None) {
+        char hex_buf[32];
+        snprintf(hex_buf, sizeof(hex_buf), "0x%08X", static_cast<unsigned int>(ret));
+        result.error_message = std::string("Failed to start screennail download: ") + hex_buf;
+        m_getContentsDataStartFlg = false;
+        return result;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(m_pendingTransfersMtx);
+        m_pendingTransfers.push_back(
+            {effectiveSaveDir, std::move(preSnapshot), std::chrono::steady_clock::now()});
+    }
+    startTransferPolling();
+
+    result.success = true;
+    result.message = "Screennail download started. Listen for transferProgress SSE events for completion.";
+    return result;
+}
+
+std::map<std::uint64_t, std::string> CameraDeviceRest::getDisplayStringNames(
+    SDK::CrDisplayStringType type, int timeoutMs) {
+    // Cache hit — return immediately. Without this, every getAllProperties call
+    // on bodies whose display-string callback never fires waits the full
+    // timeoutMs, freezing the bulk-properties endpoint on each call. These names
+    // are static for the session; a LUT import would invalidate them but those
+    // are rare and a server restart picks it up.
+    {
+        std::lock_guard<std::mutex> lk(m_dispNameCacheMutex);
+        auto it = m_dispNameCache.find(type);
+        if (it != m_dispNameCache.end()) return it->second;
+    }
+
+    std::map<std::uint64_t, std::string> result;
+
+    SDK::CrError err = SDK::RequestDisplayStringList(m_deviceHandle, type);
+    if (CR_FAILED(err)) return result;
+
+    {
+        std::unique_lock<std::mutex> lock(m_dispCameraKeyMutex);
+        m_dispCameraKeyCV.wait_for(lock, std::chrono::milliseconds(timeoutMs));
+    }
+
+    SDK::CrDisplayStringListInfo* dispList = nullptr;
+    CrInt32u dispCount = 0;
+    err = SDK::GetDisplayStringList(m_deviceHandle, type, &dispList, &dispCount);
+    if (CR_SUCCEEDED(err) && dispCount > 0 && dispList) {
+        for (CrInt32u i = 0; i < dispCount; ++i) {
+            std::string name;
+            for (CrInt32u c = 0; c < dispList[i].displayStringSize; ++c) {
+                char ch = static_cast<char>(dispList[i].displayString[c]);
+                if (ch == '\0') break;
+                name += ch;
+            }
+            result[dispList[i].value] = name;
+        }
+        SDK::ReleaseDisplayStringList(m_deviceHandle, dispList);
+    }
+
+    // Cache regardless of result — an empty map still means "we asked and the
+    // SDK didn't deliver", and re-asking won't change that within a session.
+    {
+        std::lock_guard<std::mutex> lk(m_dispNameCacheMutex);
+        m_dispNameCache[type] = result;
+    }
+
     return result;
 }
 
@@ -584,7 +722,139 @@ void CameraDeviceRest::OnCompleteDownload(CrChar* filename, CrInt32u type) {
     }
 }
 
-void CameraDeviceRest::OnWarning(CrInt32u /*warning*/) {}
+void CameraDeviceRest::OnWarning(CrInt32u warning) {
+    // Wake getDisplayStringNames() as soon as the SDK reports the requested
+    // display-string list is ready (or failed) instead of waiting the timeout.
+    if (warning == SDK::CrWarning_RequestDisplayStringList_Success ||
+        warning == SDK::CrWarning_RequestDisplayStringList_Error) {
+        m_dispCameraKeyCV.notify_all();
+    }
+
+    if (!m_eventCallback) return;
+
+    std::string eventType;
+    std::string eventData;
+
+    switch (warning) {
+    case SDK::CrWarning_Connect_Reconnecting:
+        eventType = "reconnecting";
+        eventData = "{}";
+        break;
+    case SDK::CrWarning_Connect_Reconnected:
+        eventType = "reconnected";
+        eventData = "{}";
+        break;
+    case SDK::CrWarning_Format_Complete:
+        eventType = "formatResult";
+        eventData = R"({"success":true})";
+        break;
+    case SDK::CrWarning_Format_Failed:
+    case SDK::CrWarning_Format_Invalid:
+        eventType = "formatResult";
+        eventData = R"({"success":false})";
+        break;
+    case SDK::CrWarning_Format_Canceled:
+        eventType = "formatResult";
+        eventData = R"({"success":false,"canceled":true})";
+        break;
+    case SDK::CrWarning_FocusPosition_Result_OK:
+        eventType = "focusResult";
+        eventData = R"({"success":true})";
+        break;
+    case SDK::CrWarning_FocusPosition_Result_NG:
+    case SDK::CrWarning_FocusPosition_Result_Invalid:
+        eventType = "focusResult";
+        eventData = R"({"success":false})";
+        break;
+    case SDK::CrWarning_CameraSettings_Read_Result_OK:
+        eventType = "settingsResult";
+        eventData = R"({"operation":"read","success":true})";
+        break;
+    case SDK::CrWarning_CameraSettings_Read_Result_NG:
+        eventType = "settingsResult";
+        eventData = R"({"operation":"read","success":false})";
+        break;
+    case SDK::CrWarning_CameraSettings_Save_Result_NG:
+        eventType = "settingsResult";
+        eventData = R"({"operation":"save","success":false})";
+        break;
+    case SDK::CrWarning_ImportLUTFile_Result_OK:
+        eventType = "lutImportResult";
+        eventData = R"({"success":true})";
+        break;
+    case SDK::CrWarning_ImportLUTFile_Result_NG:
+        eventType = "lutImportResult";
+        eventData = R"({"success":false,"error":"general_failure"})";
+        break;
+    case SDK::CrWarning_ImportLUTFile_Result_InvalidFileName:
+        eventType = "lutImportResult";
+        eventData = R"({"success":false,"error":"invalid_filename"})";
+        break;
+    case SDK::CrWarning_ImportLUTFile_Result_DeviceBusy:
+        eventType = "lutImportResult";
+        eventData = R"({"success":false,"error":"device_busy"})";
+        break;
+    case SDK::CrWarning_ImportLUTFile_Result_DeviceStorageFull:
+        eventType = "lutImportResult";
+        eventData = R"({"success":false,"error":"storage_full"})";
+        break;
+    case SDK::CrWarning_ImportLUTFile_Result_InvalidParameter:
+        eventType = "lutImportResult";
+        eventData = R"({"success":false,"error":"invalid_parameter"})";
+        break;
+    case SDK::CrWarning_ImportLUTFile_Result_InvalidFile:
+        eventType = "lutImportResult";
+        eventData = R"({"success":false,"error":"invalid_file"})";
+        break;
+    case SDK::CrWarning_ImportLUTFile_Result_Invalid:
+        eventType = "lutImportResult";
+        eventData = R"({"success":false,"error":"invalid"})";
+        break;
+    case SDK::CrWarning_CautionDisplay:
+        eventType = "cautionDisplay";
+        eventData = R"({"message":"Camera caution display active"})";
+        break;
+    default:
+        // The SDK sometimes routes CrWarningExt codes (>= 0x60000) through
+        // OnWarning, where the AF state params are not available.
+        if (warning == SDK::CrWarningExt_AFStatus) {
+            eventType = "afStatus";
+            eventData = R"({"state":"unlocked","source":"OnWarning"})";
+        } else {
+            std::ostringstream oss;
+            oss << R"({"code":"0x)" << std::hex << warning << std::dec
+                << R"(","message":")" << CrErrorString(warning).c_str() << R"("})";
+            eventType = "warning";
+            eventData = oss.str();
+        }
+        break;
+    }
+
+    if (!eventType.empty()) m_eventCallback(eventType, eventData);
+}
+
+void CameraDeviceRest::OnWarningExt(CrInt32u warning, CrInt32 param1, CrInt32 /*param2*/,
+                                    CrInt32 /*param3*/) {
+    if (!m_eventCallback) return;
+    if (warning != SDK::CrWarningExt_AFStatus) return;
+
+    // Unlike OnWarning, this variant carries the AF state in param1.
+    std::string state;
+    switch (param1) {
+    case SDK::CrWarningExt_AFStatusParam_Focused_AF_S:
+    case SDK::CrWarningExt_AFStatusParam_Focused_AF_C:
+        state = "focused";
+        break;
+    case SDK::CrWarningExt_AFStatusParam_NotFocused_AF_S:
+    case SDK::CrWarningExt_AFStatusParam_NotFocused_AF_C:
+        state = "unlocked";
+        break;
+    default:
+        state = "tracking";
+        break;
+    }
+    m_eventCallback("afStatus", "{\"state\":\"" + state + "\",\"source\":\"OnWarningExt\"}");
+}
 void CameraDeviceRest::OnError(CrInt32u /*error*/) {}
 
 void CameraDeviceRest::OnPropertyChangedCodes(CrInt32u num, CrInt32u* codes) {
@@ -664,6 +934,9 @@ void CameraDeviceRest::load_properties(CrInt32u /*num*/, CrInt32u* /*codes*/) {}
 // --- Remote-transfer result callbacks ------------------------------------
 void CameraDeviceRest::OnNotifyRemoteTransferResult(CrInt32u notify, CrInt32u per,
                                                     CrChar* filename) {
+    // The SDK reports progress itself on this build, so the disk-polling
+    // fallback must stay out of the way from now on.
+    m_realTransferCallbackSeen.store(true);
     // A real SDK callback fired — cancel the disk-polling fallback.
     {
         std::lock_guard<std::mutex> lock(m_pendingTransfersMtx);
@@ -690,6 +963,8 @@ void CameraDeviceRest::OnNotifyRemoteTransferContentsListChanged(CrInt32u /*noti
 
 // --- Transfer-completion disk polling (macOS V2.01 callback-miss fallback) --
 void CameraDeviceRest::startTransferPolling() {
+    // Never race the SDK once it has proven it reports transfers itself.
+    if (m_realTransferCallbackSeen.load()) return;
     bool expected = false;
     if (!m_transferPollRunning.compare_exchange_strong(expected, true)) return;
     m_transferPollThread = std::thread(&CameraDeviceRest::transferPollLoop, this);
@@ -701,29 +976,59 @@ void CameraDeviceRest::stopTransferPolling() {
 }
 
 void CameraDeviceRest::transferPollLoop() {
+    // Number of consecutive polls a candidate file's size must stay unchanged
+    // before we treat the transfer as finished (500ms per tick).
+    constexpr int kStableTicksRequired = 3;
+
     while (m_transferPollRunning) {
         std::this_thread::sleep_for(500ms);
+        // The SDK started reporting for itself mid-flight — drop the fallback
+        // rather than emit a competing (and likely premature) completion.
+        if (m_realTransferCallbackSeen.load()) {
+            std::lock_guard<std::mutex> lock(m_pendingTransfersMtx);
+            m_pendingTransfers.clear();
+            continue;
+        }
         std::lock_guard<std::mutex> lock(m_pendingTransfersMtx);
         auto now = std::chrono::steady_clock::now();
         for (auto it = m_pendingTransfers.begin(); it != m_pendingTransfers.end();) {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - it->startTime).count();
             if (elapsed > 120) { it = m_pendingTransfers.erase(it); continue; }
-            auto currentFiles = snapshotImageFiles(it->saveDir);
-            std::string newFile;
-            for (auto& f : currentFiles) {
-                if (it->preSnapshot.find(f) == it->preSnapshot.end()) { newFile = f; break; }
-            }
-            if (!newFile.empty()) {
-                if (m_eventCallback) {
-                    std::ostringstream oss;
-                    oss << "{\"percent\":100,\"notify\":\"0x20093\",\"filename\":\""
-                        << newFile << "\",\"synthetic\":true}";
-                    m_eventCallback("transferProgress", oss.str());
+
+            if (it->candidate.empty()) {
+                auto currentFiles = snapshotImageFiles(it->saveDir);
+                for (auto& f : currentFiles) {
+                    if (it->preSnapshot.find(f) == it->preSnapshot.end()) {
+                        it->candidate = f;
+                        break;
+                    }
                 }
-                it = m_pendingTransfers.erase(it);
-            } else {
-                ++it;
+                if (it->candidate.empty()) { ++it; continue; }
             }
+
+            // The file exists but the SDK may still be streaming into it. Only
+            // report completion once its size has settled.
+            std::error_code ec;
+            auto path = fs::path(it->saveDir) / it->candidate;
+            auto size = fs::file_size(path, ec);
+            if (ec) { ++it; continue; }
+
+            if (size == it->lastSize && size > 0) {
+                ++it->stableTicks;
+            } else {
+                it->lastSize = size;
+                it->stableTicks = 0;
+            }
+
+            if (it->stableTicks < kStableTicksRequired) { ++it; continue; }
+
+            if (m_eventCallback) {
+                std::ostringstream oss;
+                oss << "{\"percent\":100,\"notify\":\"0x20093\",\"filename\":\""
+                    << path.string() << "\",\"synthetic\":true}";
+                m_eventCallback("transferProgress", oss.str());
+            }
+            it = m_pendingTransfers.erase(it);
         }
     }
 }
