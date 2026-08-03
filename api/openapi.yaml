@@ -1139,7 +1139,29 @@ paths:
       x-fern-sdk-group-name: settings
       x-fern-sdk-method-name: download
       summary: Save camera settings to PC
-      description: Download the camera's current settings to a file on the host PC.
+      description: |
+        Download the camera's current settings to a file on the host PC.
+
+        The file is written to a `camera_settings/` directory relative to the
+        **server's** working directory — not a caller-supplied path. There is no
+        `save_path` for this endpoint (unlike the SD card endpoints); the optional
+        `filename` only names the file. The response `data.path` reports where it
+        landed. A typical file is `CUMSET.DAT`, around 180 KB.
+
+        Completion also emits a `downloadComplete` SSE event.
+
+        ## Requires the camera to allow it
+
+        The SDK only permits this when the camera reports
+        `camera-setting-save-enable` as `1` and `camera-setting-save-read-state`
+        as `0` (Idle). Read those via `getAllProperties` before calling — a `400`
+        here usually means the camera is refusing, not that the request was
+        malformed.
+
+        The camera will not enable it without recording media present. On bodies
+        with two card slots this means **slot 1** specifically: an ILCE-7M4 with a
+        card in slot 2 only reports `camera-setting-save-enable: 0` and rejects
+        the call.
       tags: [Settings]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -1168,7 +1190,23 @@ paths:
       x-fern-sdk-group-name: settings
       x-fern-sdk-method-name: upload
       summary: Load settings to camera
-      description: Upload a previously saved settings file back to the camera.
+      description: |
+        Upload a previously saved settings file back to the camera. `filename` is
+        required and is resolved inside the server's `camera_settings/` directory —
+        use `listCameraSettingsFiles` to see what is available.
+
+        **The camera reboots and drops the connection** once the settings are
+        applied. Reconnect afterwards; the response carries this as
+        `data.warning`. The result arrives as an SSE `settingsResult` event with
+        `{"operation":"read","success":true}`.
+
+        ## Requires the camera to allow it
+
+        Gated the same way as `downloadCameraSettings`, but on
+        `camera-setting-read-enable` being `1` (with
+        `camera-setting-save-read-state` at `0`). Recording media must be present —
+        **slot 1** on two-slot bodies. Read those properties via
+        `getAllProperties` to tell a refusing camera from a bad request.
       tags: [Settings]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -2104,6 +2142,12 @@ components:
         `camera-error-caution-status` (read), `system-error-caution-status` (read),
         `camera-system-error-info` (read)
 
+        **Camera-settings file gates (read):** `camera-setting-save-enable`,
+        `camera-setting-read-enable`, `camera-setting-save-read-state` — whether
+        the camera will accept `downloadCameraSettings` / `uploadCameraSettings`.
+        Both enable flags are `0` Disable / `1` Enable; the state is `0` Idle /
+        `1` Reading. Check these when either endpoint returns 400.
+
         **Media slots:** `media-slot1-status`, `media-slot1-remaining-photos`,
         `media-slot1-remaining-time`, `media-slot2-status`,
         `media-slot2-remaining-photos`, `media-slot2-remaining-time` (all read)
@@ -2175,6 +2219,10 @@ components:
         - camera-error-caution-status
         - system-error-caution-status
         - camera-system-error-info
+        # Camera-settings file save/load gates
+        - camera-setting-save-enable
+        - camera-setting-read-enable
+        - camera-setting-save-read-state
         # Media slots
         - media-slot1-status
         - media-slot1-remaining-photos

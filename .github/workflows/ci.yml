@@ -13,8 +13,13 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Guards the PUBLIC repo only. The private development repo deliberately
+  # tracks the SDK headers, the sample-derived wrapper sources and the OpenCV
+  # headers so a clone is immediately readable without re-extracting the SDK —
+  # it is not subject to this check.
   compliance:
     name: License compliance (no SDK source committed)
+    if: github.repository != 'jordlee/MacOS-SDK-Sample-App'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +28,7 @@ jobs:
         run: |
           echo "Checking that no SDK source or binaries are committed..."
           matches=$(git ls-files | grep -E \
-            'shared/(sdk|opencv/(include|Darwin|Linux|Windows))/|shared/core/.*\.(cpp|h)$|\.(dylib|so|dll|a)$' \
+            'shared/(sdk|opencv/(include|Darwin|Linux|Windows))/|shared/core/.*\.(cpp|h)$|\.(dylib|so|dll|a|lib)$' \
             || true)
           if [ -n "$matches" ]; then
             echo "::error::Sony SDK / wrapper / binary files must not be committed to this public repo:"
