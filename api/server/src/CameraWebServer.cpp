@@ -540,6 +540,20 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
         return handleApiImportLUT(cameraId, request);
     }
 
+    // Pattern: GET|PUT /api/cameras/{cameraId}/af-area-position
+    std::regex afAreaPositionPattern(R"(^/api/cameras/([^/]+)/af-area-position$)");
+    if (std::regex_match(request.path, matches, afAreaPositionPattern)) {
+        std::string cameraId = matches[1];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
+        if (request.method == "GET") {
+            return handleApiGetAFAreaPosition(cameraId);
+        } else if (request.method == "PUT") {
+            return handleApiSetAFAreaPosition(cameraId, request);
+        }
+    }
+
     // Pattern: /api/cameras/{cameraId}/live-view/{action}
     std::regex liveViewPattern(R"(^/api/cameras/([^/]+)/live-view/([^/]+)$)");
     if (std::regex_match(request.path, matches, liveViewPattern)) {
@@ -2594,6 +2608,193 @@ HttpResponse CameraWebServer::handleApiDownloadCompressed(
     }
 
     response.body = root.toStyledString();
+    return response;
+}
+
+// ==============================================================================
+// AF Area Position Handlers
+// ==============================================================================
+
+namespace {
+
+// The write coordinate space is fixed at X 0-639 / Y 0-479 regardless of the
+// denominators the camera reports the frame in, so convert explicitly.
+constexpr double kAFPositionMaxX = 639.0;
+constexpr double kAFPositionMaxY = 479.0;
+
+}  // namespace
+
+HttpResponse CameraWebServer::handleApiGetAFAreaPosition(const std::string& cameraId) {
+    HttpResponse response;
+    response.contentType = "application/json";
+
+    std::cout << "🎯 Get AF Area Position: GET /api/cameras/" << cameraId
+              << "/af-area-position" << std::endl;
+
+    auto cameraDevice = m_cameraController->getCameraDevice(cameraId);
+    if (!cameraDevice) {
+        response.statusCode = 404;
+        response.body = R"({"success": false, "message": "Camera not found"})";
+        return response;
+    }
+
+    auto result = cameraDevice->get_af_area_position();
+
+    Json::Value root;
+    Json::Value data;
+    data["available"] = result.available;
+
+    Json::Value frames(Json::arrayValue);
+    for (const auto& f : result.frames) {
+        Json::Value jf;
+        jf["type"] = f.typeName;
+        jf["state"] = f.stateName;
+        jf["priority"] = f.priority;
+
+        // Normalized 0-1 centre — what a UI needs to place the box over a frame
+        // of any resolution.
+        double nx = f.xDenominator ? static_cast<double>(f.xNumerator) / f.xDenominator : 0.0;
+        double ny = f.yDenominator ? static_cast<double>(f.yNumerator) / f.yDenominator : 0.0;
+        Json::Value normalized;
+        normalized["x"] = nx;
+        normalized["y"] = ny;
+        jf["normalized"] = normalized;
+
+        // Same centre expressed in the coordinate space PUT expects, so a value
+        // read here can be written straight back.
+        Json::Value position;
+        position["x"] = static_cast<int>(nx * kAFPositionMaxX + 0.5);
+        position["y"] = static_cast<int>(ny * kAFPositionMaxY + 0.5);
+        jf["position"] = position;
+
+        // Box size as a fraction of the frame, for drawing the rectangle.
+        Json::Value size;
+        size["width"] = f.width;
+        size["height"] = f.height;
+        size["normalized_width"] =
+            f.xDenominator ? static_cast<double>(f.width) / f.xDenominator : 0.0;
+        size["normalized_height"] =
+            f.yDenominator ? static_cast<double>(f.height) / f.yDenominator : 0.0;
+        jf["size"] = size;
+
+        Json::Value raw;
+        raw["xNumerator"] = f.xNumerator;
+        raw["xDenominator"] = f.xDenominator;
+        raw["yNumerator"] = f.yNumerator;
+        raw["yDenominator"] = f.yDenominator;
+        jf["raw"] = raw;
+
+        frames.append(jf);
+    }
+    data["frames"] = frames;
+    data["frame_count"] = static_cast<int>(result.frames.size());
+
+    root["success"] = result.available;
+    if (result.available) {
+        root["message"] = "AF area position retrieved";
+        response.statusCode = 200;
+    } else {
+        root["message"] = result.error.empty()
+            ? "AF area frame not available. The camera only reports one for focus "
+              "areas that draw a box (e.g. Flexible Spot), with live view active."
+            : result.error;
+        response.statusCode = 400;
+    }
+    root["data"] = data;
+
+    response.body = root.toStyledString();
+    return response;
+}
+
+HttpResponse CameraWebServer::handleApiSetAFAreaPosition(const std::string& cameraId,
+                                                         const HttpRequest& request) {
+    HttpResponse response;
+    response.contentType = "application/json";
+
+    std::cout << "🎯 Set AF Area Position: PUT /api/cameras/" << cameraId
+              << "/af-area-position" << std::endl;
+
+    auto cameraDevice = m_cameraController->getCameraDevice(cameraId);
+    if (!cameraDevice) {
+        response.statusCode = 404;
+        response.body = R"({"success": false, "message": "Camera not found"})";
+        return response;
+    }
+
+    if (request.body.empty()) {
+        response.statusCode = 400;
+        response.body = R"({"success": false, "message": "Request body required: {\"x\":<0-639>,\"y\":<0-479>} or {\"normalized\":{\"x\":0-1,\"y\":0-1}}"})";
+        return response;
+    }
+
+    Json::Value root;
+    Json::CharReaderBuilder builder;
+    std::istringstream bodyStream(request.body);
+    std::string errs;
+    if (!Json::parseFromStream(builder, bodyStream, &root, &errs)) {
+        response.statusCode = 400;
+        response.body = R"({"success": false, "message": "Invalid JSON body"})";
+        return response;
+    }
+
+    double x = 0.0, y = 0.0;
+    if (root.isMember("normalized") && root["normalized"].isObject()) {
+        // Accept 0-1 coordinates so a UI can pass a tap position directly
+        // without knowing the SDK's coordinate space.
+        const Json::Value& n = root["normalized"];
+        if (!n.isMember("x") || !n.isMember("y")) {
+            response.statusCode = 400;
+            response.body = R"({"success": false, "message": "normalized requires both x and y"})";
+            return response;
+        }
+        double nx = n["x"].asDouble();
+        double ny = n["y"].asDouble();
+        if (nx < 0.0 || nx > 1.0 || ny < 0.0 || ny > 1.0) {
+            response.statusCode = 400;
+            response.body = R"({"success": false, "message": "normalized x and y must be between 0 and 1"})";
+            return response;
+        }
+        x = nx * kAFPositionMaxX + 0.5;
+        y = ny * kAFPositionMaxY + 0.5;
+    } else if (root.isMember("x") && root.isMember("y")) {
+        x = root["x"].asDouble();
+        y = root["y"].asDouble();
+    } else {
+        response.statusCode = 400;
+        response.body = R"({"success": false, "message": "Provide either x and y, or a normalized object"})";
+        return response;
+    }
+
+    if (x < 0 || y < 0) {
+        response.statusCode = 400;
+        response.body = R"({"success": false, "message": "x and y must not be negative"})";
+        return response;
+    }
+
+    auto ux = static_cast<unsigned int>(x);
+    auto uy = static_cast<unsigned int>(y);
+
+    std::string errorDetail;
+    bool ok = cameraDevice->set_af_area_position(ux, uy, &errorDetail);
+
+    Json::Value out;
+    out["success"] = ok;
+    Json::Value data;
+    data["x"] = ux;
+    data["y"] = uy;
+    if (ok) {
+        out["message"] = "AF area position set";
+        // The camera silently ignores a write when the focus area has no
+        // movable box, so tell callers how to confirm it landed.
+        data["verify"] = "GET /af-area-position to confirm the frame moved";
+        response.statusCode = 200;
+    } else {
+        out["message"] = errorDetail.empty() ? "Failed to set AF area position" : errorDetail;
+        response.statusCode = 400;
+    }
+    out["data"] = data;
+
+    response.body = out.toStyledString();
     return response;
 }
 

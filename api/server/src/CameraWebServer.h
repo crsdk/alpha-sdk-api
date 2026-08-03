@@ -211,6 +211,10 @@ private:
     HttpResponse handleApiListCameraSettings();
     HttpResponse handleApiImportLUT(const std::string& cameraId, const HttpRequest& request);
 
+    // AF area position. Reads the live focus frame(s); writes the centre point.
+    HttpResponse handleApiGetAFAreaPosition(const std::string& cameraId);
+    HttpResponse handleApiSetAFAreaPosition(const std::string& cameraId, const HttpRequest& request);
+
     // Server management endpoints
     HttpResponse handleApiServerStatus();
     HttpResponse handleApiServerLogs(const HttpRequest& request);

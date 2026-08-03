@@ -165,6 +165,35 @@ public:
                                                            CrInt32u file_id,
                                                            const std::string& save_path);
 
+    // --- AF area position -------------------------------------------------
+    // One focus frame as the camera reports it. Position and size are
+    // fractions: xNumerator/xDenominator is the frame centre across the live
+    // view, so a UI can draw the box without knowing the sensor resolution.
+    struct AFFrame {
+        int          type = 0;        // CrFocusFrameType
+        int          state = 0;       // CrFocusFrameState
+        // Resolved here rather than in the HTTP layer, which holds no SDK types.
+        std::string  typeName;
+        std::string  stateName;
+        unsigned int priority = 0;
+        unsigned int xNumerator = 0, xDenominator = 0;
+        unsigned int yNumerator = 0, yDenominator = 0;
+        unsigned int width = 0, height = 0;
+    };
+    struct AFAreaPositionResult {
+        bool                  available = false;  // camera reported the property
+        std::vector<AFFrame>  frames;             // may hold more than one frame
+        std::string           error;
+    };
+
+    // Reading the AF frame is NOT symmetric with writing it. GetDeviceProperties
+    // reports CrDeviceProperty_AF_Area_Position but its value is always 0 — the
+    // live-view property is the only source of the actual position, and
+    // SetDeviceProperty is the only way to move it.
+    AFAreaPositionResult get_af_area_position();
+    // x is packed into the upper 16 bits and y into the lower 16.
+    bool set_af_area_position(unsigned int x, unsigned int y, std::string* errorDetail = nullptr);
+
     // --- Camera-supplied display strings (LUT / base-look names) ---
     // Maps an SDK value to the camera's own display name for `type`. Results are
     // cached per session: bodies that never fire the display-string callback would

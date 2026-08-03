@@ -533,6 +533,123 @@ CameraDeviceRest::FileDownloadResult CameraDeviceRest::download_remote_transfer_
     return result;
 }
 
+namespace {
+
+const char* focusFrameTypeName(int type) {
+    switch (type) {
+        case SDK::CrFocusFrameType_PhaseDetection_AFSensor:    return "phase-detection-af-sensor";
+        case SDK::CrFocusFrameType_PhaseDetection_ImageSensor: return "phase-detection-image-sensor";
+        case SDK::CrFocusFrameType_Wide:                       return "wide";
+        case SDK::CrFocusFrameType_Zone:                       return "zone";
+        case SDK::CrFocusFrameType_CentralEmphasis:            return "central-emphasis";
+        case SDK::CrFocusFrameType_ContrastFlexibleMain:       return "contrast-flexible-main";
+        case SDK::CrFocusFrameType_ContrastFlexibleAssist:     return "contrast-flexible-assist";
+        case SDK::CrFocusFrameType_Contrast:                   return "contrast";
+        case SDK::CrFocusFrameType_FrameSomewhere:             return "frame-somewhere";
+        default:                                               return "unknown";
+    }
+}
+
+const char* focusFrameStateName(int state) {
+    switch (state) {
+        case SDK::CrFocusFrameState_NotFocused:          return "not-focused";
+        case SDK::CrFocusFrameState_Focused:             return "focused";
+        case SDK::CrFocusFrameState_FocusFrameSelection: return "selection";
+        case SDK::CrFocusFrameState_Moving:              return "moving";
+        case SDK::CrFocusFrameState_RegistrationAF:      return "registration-af";
+        case SDK::CrFocusFrameState_Island:              return "island";
+        default:                                         return "unknown";
+    }
+}
+
+}  // namespace
+
+CameraDeviceRest::AFAreaPositionResult CameraDeviceRest::get_af_area_position() {
+    AFAreaPositionResult result;
+
+    SDK::CrLiveViewProperty* props = nullptr;
+    CrInt32 numProps = 0;
+    CrInt32u code = SDK::CrLiveViewPropertyCode::CrLiveViewProperty_AF_Area_Position;
+
+    SDK::CrError err =
+        SDK::GetSelectLiveViewProperties(m_deviceHandle, 1, &code, &props, &numProps);
+    if (CR_FAILED(err) || props == nullptr || numProps <= 0) {
+        char hex[32];
+        snprintf(hex, sizeof(hex), "0x%08X", static_cast<unsigned int>(err));
+        result.error = std::string("GetSelectLiveViewProperties failed: ") + hex;
+        if (props) SDK::ReleaseLiveViewProperties(m_deviceHandle, props);
+        return result;
+    }
+
+    for (CrInt32 i = 0; i < numProps; ++i) {
+        if (props[i].GetCode() != SDK::CrLiveViewProperty_AF_Area_Position) continue;
+        if (!props[i].IsGetEnableCurrentValue()) {
+            result.error = "Camera reports the AF area frame as not currently readable";
+            break;
+        }
+
+        auto* raw = props[i].GetValue();
+        CrInt32u size = props[i].GetValueSize();
+        if (raw == nullptr || size < sizeof(SDK::CrFocusFrameInfo)) {
+            result.error = "AF area frame payload was empty";
+            break;
+        }
+
+        // The payload holds an array — a tracking or expanded area reports more
+        // than one frame, and a UI generally wants to draw all of them.
+        result.available = true;
+        CrInt32u count = size / static_cast<CrInt32u>(sizeof(SDK::CrFocusFrameInfo));
+        auto* info = reinterpret_cast<SDK::CrFocusFrameInfo*>(raw);
+        for (CrInt32u f = 0; f < count; ++f) {
+            AFFrame frame;
+            frame.type         = static_cast<int>(info[f].type);
+            frame.state        = static_cast<int>(info[f].state);
+            frame.typeName     = focusFrameTypeName(frame.type);
+            frame.stateName    = focusFrameStateName(frame.state);
+            frame.priority     = info[f].priority;
+            frame.xNumerator   = info[f].xNumerator;
+            frame.xDenominator = info[f].xDenominator;
+            frame.yNumerator   = info[f].yNumerator;
+            frame.yDenominator = info[f].yDenominator;
+            frame.width        = info[f].width;
+            frame.height       = info[f].height;
+            result.frames.push_back(frame);
+        }
+        break;
+    }
+
+    SDK::ReleaseLiveViewProperties(m_deviceHandle, props);
+    return result;
+}
+
+bool CameraDeviceRest::set_af_area_position(unsigned int x, unsigned int y,
+                                            std::string* errorDetail) {
+    // Documented coordinate space: X 0-639, Y 0-479. The usable area is smaller
+    // (inset by half the frame size) and varies by model, aspect and AF setting,
+    // so the camera may clamp or ignore a value inside these bounds.
+    if (x > 639 || y > 479) {
+        if (errorDetail)
+            *errorDetail = "Out of range: x must be 0-639 and y must be 0-479";
+        return false;
+    }
+
+    SDK::CrDeviceProperty prop;
+    prop.SetCode(SDK::CrDeviceProperty_AF_Area_Position);
+    prop.SetCurrentValue((static_cast<CrInt32u>(x) << 16) | static_cast<CrInt32u>(y));
+    prop.SetValueType(SDK::CrDataType_UInt32Range);
+
+    SDK::CrError err = SDK::SetDeviceProperty(m_deviceHandle, &prop);
+    if (CR_FAILED(err)) {
+        if (errorDetail) {
+            char hex[32];
+            snprintf(hex, sizeof(hex), "0x%08X", static_cast<unsigned int>(err));
+            *errorDetail = std::string("SetDeviceProperty failed: ") + hex;
+        }
+        return false;
+    }
+    return true;
+}
+
 std::map<std::uint64_t, std::string> CameraDeviceRest::getDisplayStringNames(
     SDK::CrDisplayStringType type, int timeoutMs) {
     // Cache hit — return immediately. Without this, every getAllProperties call
