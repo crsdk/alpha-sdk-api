@@ -598,6 +598,14 @@ const char* focusFrameTypeName(int type) {
     }
 }
 
+const char* trackingFrameTypeName(int type) {
+    switch (type) {
+        case SDK::CrTrackingFrameType_NonTargetAF: return "non-target-af";
+        case SDK::CrTrackingFrameType_TargetAF:    return "target-af";
+        default:                                   return "unknown";
+    }
+}
+
 const char* focusFrameStateName(int state) {
     switch (state) {
         case SDK::CrFocusFrameState_NotFocused:          return "not-focused";
@@ -794,6 +802,147 @@ bool CameraDeviceRest::set_af_area_position(unsigned int x, unsigned int y,
             char hex[32];
             snprintf(hex, sizeof(hex), "0x%08X", static_cast<unsigned int>(err));
             *errorDetail = std::string("SetDeviceProperty failed: ") + hex;
+        }
+        return false;
+    }
+    return true;
+}
+
+CameraDeviceRest::TrackingFrameResult CameraDeviceRest::get_tracking_frame() {
+    TrackingFrameResult result;
+
+    SDK::CrLiveViewProperty* props = nullptr;
+    CrInt32 numProps = 0;
+    CrInt32u code = SDK::CrLiveViewPropertyCode::CrLiveViewProperty_TrackingFrame;
+
+    SDK::CrError err =
+        SDK::GetSelectLiveViewProperties(m_deviceHandle, 1, &code, &props, &numProps);
+    if (CR_FAILED(err) || props == nullptr || numProps <= 0) {
+        char hex[32];
+        snprintf(hex, sizeof(hex), "0x%08X", static_cast<unsigned int>(err));
+        result.error = std::string("GetSelectLiveViewProperties failed: ") + hex;
+        if (props) SDK::ReleaseLiveViewProperties(m_deviceHandle, props);
+        return result;
+    }
+
+    for (CrInt32 i = 0; i < numProps; ++i) {
+        if (props[i].GetCode() != SDK::CrLiveViewProperty_TrackingFrame) continue;
+        if (!props[i].IsGetEnableCurrentValue()) {
+            result.error = "Camera reports the tracking frame as not currently readable";
+            break;
+        }
+        // The code is shared with other frame payloads, so trust the tag rather
+        // than the size: a face or focus frame here would decode into nonsense.
+        if (props[i].GetFrameInfoType() != SDK::CrFrameInfoType_TrackingFrameInfo) {
+            result.error = "Camera returned a different frame type for the tracking frame";
+            break;
+        }
+
+        // Readable but empty is the normal state when nothing is being tracked,
+        // so that is a successful read with no frames rather than an error.
+        result.available = true;
+
+        auto* raw = props[i].GetValue();
+        CrInt32u size = props[i].GetValueSize();
+        if (raw == nullptr || size < sizeof(SDK::CrTrackingFrameInfo)) break;
+
+        CrInt32u count = size / static_cast<CrInt32u>(sizeof(SDK::CrTrackingFrameInfo));
+        auto* info = reinterpret_cast<SDK::CrTrackingFrameInfo*>(raw);
+        for (CrInt32u f = 0; f < count; ++f) {
+            TrackingFrame frame;
+            frame.type         = static_cast<int>(info[f].type);
+            frame.state        = static_cast<int>(info[f].state);
+            frame.typeName     = trackingFrameTypeName(frame.type);
+            frame.stateName    = focusFrameStateName(frame.state);
+            frame.priority     = info[f].priority;
+            frame.xNumerator   = info[f].xNumerator;
+            frame.xDenominator = info[f].xDenominator;
+            frame.yNumerator   = info[f].yNumerator;
+            frame.yDenominator = info[f].yDenominator;
+            frame.width        = info[f].width;
+            frame.height       = info[f].height;
+            result.frames.push_back(frame);
+        }
+        break;
+    }
+
+    SDK::ReleaseLiveViewProperties(m_deviceHandle, props);
+    return result;
+}
+
+bool CameraDeviceRest::is_remote_touch_supported() {
+    CrInt64u status = 0;
+    if (!fetchOne(m_deviceHandle, SDK::CrDeviceProperty_RemoteTouchOperationEnableStatus, status))
+        return false;
+    return status == SDK::CrRemoteTouchOperation_Enable;
+}
+
+bool CameraDeviceRest::is_cancel_remote_touch_supported() {
+    CrInt64u status = 0;
+    if (!fetchOne(m_deviceHandle,
+                  SDK::CrDeviceProperty_CancelRemoteTouchOperationEnableStatus, status))
+        return false;
+    return status == SDK::CrCancelRemoteTouchOperation_Enable;
+}
+
+bool CameraDeviceRest::remote_touch(unsigned int x, unsigned int y,
+                                    std::string* errorDetail) {
+    // Same coordinate space as the AF area position: X 0-639, Y 0-479.
+    if (x > 639 || y > 479) {
+        if (errorDetail)
+            *errorDetail = "Out of range: x must be 0-639 and y must be 0-479";
+        return false;
+    }
+
+    // The camera rejects the write outright when touch is not currently
+    // available, so report the gate rather than an opaque SDK error. On some
+    // bodies (ILCE-7SM3, ILCE-7C) touch is movie-mode only, which shows up here.
+    if (!is_remote_touch_supported()) {
+        if (errorDetail)
+            *errorDetail = "Camera reports remote touch as unavailable right now "
+                           "(RemoteTouchOperationEnableStatus is Disable)";
+        return false;
+    }
+
+    SDK::CrDeviceProperty prop;
+    prop.SetCode(SDK::CrDeviceProperty_RemoteTouchOperation);
+    prop.SetCurrentValue((static_cast<CrInt32u>(x) << 16) | static_cast<CrInt32u>(y));
+    prop.SetValueType(SDK::CrDataType_UInt32);
+
+    SDK::CrError err = SDK::SetDeviceProperty(m_deviceHandle, &prop);
+    if (CR_FAILED(err)) {
+        if (errorDetail) {
+            char hex[32];
+            snprintf(hex, sizeof(hex), "0x%08X", static_cast<unsigned int>(err));
+            *errorDetail = std::string("SetDeviceProperty failed: ") + hex;
+        }
+        return false;
+    }
+    return true;
+}
+
+bool CameraDeviceRest::cancel_remote_touch(std::string* errorDetail) {
+    // Cancel is only accepted while something is actually being tracked, which
+    // is exactly what its own enable status reports.
+    if (!is_cancel_remote_touch_supported()) {
+        if (errorDetail)
+            *errorDetail = "Nothing to cancel — the camera reports "
+                           "CancelRemoteTouchOperationEnableStatus as Disable";
+        return false;
+    }
+
+    // Down then Up, matching how the SDK sample drives the other cancel
+    // commands; the operation runs on the Up.
+    SDK::SendCommand(m_deviceHandle, SDK::CrCommandId_CancelRemoteTouchOperation,
+                     SDK::CrCommandParam_Down);
+    SDK::CrError err = SDK::SendCommand(m_deviceHandle,
+                                        SDK::CrCommandId_CancelRemoteTouchOperation,
+                                        SDK::CrCommandParam_Up);
+    if (CR_FAILED(err)) {
+        if (errorDetail) {
+            char hex[32];
+            snprintf(hex, sizeof(hex), "0x%08X", static_cast<unsigned int>(err));
+            *errorDetail = std::string("SendCommand failed: ") + hex;
         }
         return false;
     }

@@ -494,6 +494,67 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/cameras/{cameraId}/tracking-frame:
+    get:
+      operationId: getTrackingFrame
+      x-fern-sdk-group-name: focus
+      x-fern-sdk-method-name: getTrackingFrame
+      summary: Get the tracking frame
+      description: |
+        Return the box the camera is tracking a subject in, after a
+        `remoteTouch`. The shape is the same as `getAFAreaPosition` — `normalized`
+        for overlays, `position` in the coordinate space `remoteTouch` accepts,
+        `raw` as the camera reports it — so the same overlay code renders both.
+
+        Poll this to follow a moving subject: the camera updates the frame on its
+        own once tracking has been seeded.
+
+        `type` is `target-af` for the subject being tracked, `non-target-af` for a
+        candidate the camera is showing but not acting on.
+
+        ## Empty is a normal answer
+
+        With nothing being tracked this returns `200` with `frames: []` and
+        `available: true` — the property was readable, there was just no subject.
+        A `400` means the property could not be read at all, usually because live
+        view is not running.
+
+        Two ways to get a frame here, both measured on an ILCE-7M4:
+
+        - `remoteTouch`, with the body's **Touch Func. in Shooting** set to
+          `Touch Tracking`. Tracking then holds on its own with no button held.
+        - The camera tracking for its own reasons — a tracking focus area with AF
+          engaged. Holding `af-on` in `Tracking: Expand Flexible Spot` reports a
+          `target-af` frame that disappears on release.
+
+        With the ILCE-7M4 default of `Touch Focus`, a touch moves the AF frame
+        instead and nothing appears here — read `getAFAreaPosition` in that case.
+      tags: [Actions]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: |
+            Tracking frame read. `frames` is empty when nothing is being tracked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingFrameResponse"
+        "400":
+          description: |
+            The tracking frame could not be read — usually live view is not
+            running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/cameras/{cameraId}/priority-key:
     get:
       operationId: getPriorityKey
@@ -640,6 +701,137 @@ paths:
             Missing or unknown `button`, invalid `action`, or the camera refused
             the press because a key is already held. When the camera reported its
             operable keys they are listed in `data.supported_buttons`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/cameras/{cameraId}/actions/touch:
+    post:
+      operationId: remoteTouch
+      x-fern-sdk-group-name: actions
+      x-fern-sdk-method-name: touch
+      summary: Touch a point in the frame
+      description: |
+        Tap a point in the live-view frame, as if someone touched the camera's own
+        screen there. Send absolute coordinates (`x` 0-639, `y` 0-479) or
+        `normalized` 0-1 values — the latter is what you want for a tap or click
+        on a live view.
+
+        ## This is not `setAFAreaPosition`
+
+        `setAFAreaPosition` drags the focus box to a point and leaves it there. A
+        touch **seeds the camera's subject tracking**: the camera locks onto
+        whatever is at that point and then follows it on its own. You cannot get
+        that by rewriting positions from a client. Touch also works in focus areas
+        that have no movable box — Wide, face priority — where
+        `setAFAreaPosition` has nothing to move.
+
+        Read the result with `getTrackingFrame`.
+
+        ## The camera decides what a touch does
+
+        The SDK property that would select the touch behaviour
+        (`FunctionOfRemoteTouchOperation`) is unsupported on Alpha bodies
+        including the ILCE-7M4 — only broadcast bodies can choose. A touch does
+        whatever the body's own **Touch Func. in Shooting** is set to
+        (`MENU > Setup > Touch Operation > Touch Panel Settings > Shooting
+        Screen`), and that setting is not exposed over this API:
+
+        | Touch Func. in Shooting | What `remoteTouch` does |
+        |---|---|
+        | `Touch Focus` (ILCE-7M4 default) | Moves the AF frame, like `setAFAreaPosition`. `getTrackingFrame` stays empty. |
+        | `Touch Tracking` | Starts subject tracking at the point. `getTrackingFrame` reports the box. |
+
+        Both were measured on an ILCE-7M4. Note the touch is accepted **even when
+        the body's `Touch Operation` is `Off`** — that setting governs the
+        physical screen, not the remote property.
+
+        ## A 200 does not mean tracking started
+
+        The camera accepts the write and then decides. With `Touch Tracking` set,
+        a touch on a point with nothing trackable — measured on flat wall and
+        blown-out window areas — returns `200` and produces no tracking frame at
+        all. **Always read `getTrackingFrame` to find out what actually
+        happened.**
+
+        Touches land close to where they are asked for but not exactly: the
+        camera snaps to the nearest feature it can hold. Measured on an ILCE-7M4,
+        `320,240` landed at `320,239` and `200,300` at `209,297`, while points
+        near the edges pulled further in — `0,479` landed at `35,445`.
+
+        Leave a beat between touches. Firing several within a second or so, or
+        immediately after a `cancelRemoteTouch`, made the camera drop tracking
+        entirely until it was left alone.
+
+        ## When this returns 400
+
+        Touch is gated on the camera reporting it as currently available. On the
+        ILCE-7SM3 and ILCE-7C it is movie-mode only; other bodies gate it on focus
+        mode or on live view running. A rejected touch says which gate failed.
+
+        Requires priority key `pc-remote`.
+      tags: [Actions]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TouchRequest"
+      responses:
+        "200":
+          description: |
+            Touch sent. Confirm what the camera locked onto with
+            `getTrackingFrame`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: |
+            Missing or malformed coordinates, coordinates out of range, or the
+            camera reports remote touch as unavailable right now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/cameras/{cameraId}/actions/touch-cancel:
+    post:
+      operationId: cancelRemoteTouch
+      x-fern-sdk-group-name: actions
+      x-fern-sdk-method-name: touchCancel
+      summary: Cancel a touch / stop tracking
+      description: |
+        Release the subject a `remoteTouch` locked onto. No body required.
+
+        The camera only accepts a cancel while it has something to cancel, so this
+        returns `400` when nothing is being tracked. That is a safe no-op, not a
+        failure to retry.
+
+        The gate is specifically about a **remote touch** being in progress, not
+        about tracking in general. Tracking the camera started itself — a tracking
+        focus area with `af-on` held — reports nothing to cancel, because there is
+        no remote touch operation to release. The camera's ready flag also lags a
+        successful cancel by a beat, so an immediate second call can still report
+        success; treat `getTrackingFrame` as the truth.
+
+        Requires priority key `pc-remote`.
+      tags: [Actions]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: Tracking cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: |
+            Nothing to cancel — the camera is not tracking a touched subject.
           content:
             application/json:
               schema:
@@ -2327,6 +2519,107 @@ components:
                 box plus an assist box — render every entry.
               items:
                 $ref: "#/components/schemas/AFFrame"
+
+    TouchRequest:
+      type: object
+      description: |
+        Supply either `x` and `y`, or a `normalized` object. If both are present,
+        `normalized` wins. Same coordinate space as `AFAreaPositionRequest`.
+      properties:
+        x:
+          type: integer
+          minimum: 0
+          maximum: 639
+          description: Touch point X in the camera's coordinate space.
+        y:
+          type: integer
+          minimum: 0
+          maximum: 479
+          description: Touch point Y in the camera's coordinate space.
+        normalized:
+          type: object
+          description: |
+            Touch point as 0-1 fractions of the live view — use this for a tap or
+            click position without converting to the SDK's coordinate space.
+          properties:
+            x:
+              type: number
+              minimum: 0
+              maximum: 1
+            y:
+              type: number
+              minimum: 0
+              maximum: 1
+
+    TrackingFrame:
+      type: object
+      description: A single tracking frame as the camera reports it.
+      properties:
+        type:
+          type: string
+          description: |
+            `target-af` for the subject being tracked, `non-target-af` for a
+            candidate the camera is showing but not acting on, or `unknown`.
+        state:
+          type: string
+          description: |
+            `focused`, `not-focused`, `moving`, `selection`, `registration-af`,
+            `island` or `unknown` — the same states the AF frame reports.
+        priority:
+          type: integer
+        normalized:
+          type: object
+          description: Frame centre as 0-1 fractions — use this to place an overlay.
+          properties:
+            x: { type: number }
+            y: { type: number }
+        position:
+          type: object
+          description: |
+            The same centre in the coordinate space `remoteTouch` accepts, so a
+            tracked position can be fed straight back in.
+          properties:
+            x: { type: integer }
+            y: { type: integer }
+        size:
+          type: object
+          description: Box dimensions, raw and as a fraction of the frame.
+          properties:
+            width: { type: integer }
+            height: { type: integer }
+            normalized_width: { type: number }
+            normalized_height: { type: number }
+        raw:
+          type: object
+          description: The camera's own numerator/denominator pair, unconverted.
+          properties:
+            xNumerator: { type: integer }
+            xDenominator: { type: integer }
+            yNumerator: { type: integer }
+            yDenominator: { type: integer }
+
+    TrackingFrameResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            available:
+              type: boolean
+              description: |
+                Whether the tracking property could be read. True with an empty
+                `frames` array means nothing is being tracked.
+            frame_count:
+              type: integer
+            frames:
+              type: array
+              description: One entry per frame the camera reports.
+              items:
+                $ref: "#/components/schemas/TrackingFrame"
 
     SettingsFileRequest:
       type: object

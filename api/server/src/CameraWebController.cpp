@@ -196,7 +196,11 @@ static const std::map<std::string, ActionMapping> ACTION_MAP = {
     {"focus-near-far", ActionMapping("focus-near-far", 0, 0, "focus_near_far", true)},
     // Physical button presses (menu, enter, C1-C7, delete, ...). The button name
     // and optional down/up action come from the request body, same as shutter.
-    {"button", ActionMapping("button", 0, 0, "press_camera_button", true)},  // Custom near/far focus step handler
+    {"button", ActionMapping("button", 0, 0, "press_camera_button", true)},  // Custom button-press handler
+    // Remote touch — seeds subject tracking at a point, unlike af-area-position
+    // which just moves the focus box. Coordinates come from the request body.
+    {"touch", ActionMapping("touch", 0, 0, "remote_touch", true)},
+    {"touch-cancel", ActionMapping("touch-cancel", SDK::CrCommandId::CrCommandId_CancelRemoteTouchOperation, SDK::CrCommandParam::CrCommandParam_Up, "cancel_remote_touch", true)},
     // Future actions can be added here with one line each:
     {"movie-rec", ActionMapping("movie-rec", SDK::CrCommandId::CrCommandId_MovieRecord, SDK::CrCommandParam::CrCommandParam_Down, "toggle_movie_recording", true)},
 };
@@ -6674,6 +6678,98 @@ ApiResponse CameraWebController::executeActionGeneric(const std::string& cameraI
                             response.data["supported_buttons"] = joined;
                         }
                     }
+                }
+            }
+            else if (actionName == "touch") {
+                // Touch a point in the live-view frame. Accepts the same two
+                // coordinate forms as PUT /af-area-position: raw camera
+                // coordinates, or normalized 0-1 so a UI can pass a tap
+                // position without knowing the SDK's coordinate space.
+                constexpr double kTouchMaxX = 639.0;
+                constexpr double kTouchMaxY = 479.0;
+
+                double x = 0.0, y = 0.0;
+                bool haveCoords = false;
+                std::string coordError;
+
+                if (!params.empty()) {
+                    try {
+                        Json::Value root;
+                        Json::CharReaderBuilder builder;
+                        std::string errs;
+                        std::istringstream bodyStream(params);
+                        if (Json::parseFromStream(builder, bodyStream, &root, &errs)) {
+                            if (root.isMember("normalized") && root["normalized"].isObject()) {
+                                const Json::Value& n = root["normalized"];
+                                if (!n.isMember("x") || !n.isMember("y")) {
+                                    coordError = "normalized requires both x and y";
+                                } else {
+                                    double nx = n["x"].asDouble();
+                                    double ny = n["y"].asDouble();
+                                    if (nx < 0.0 || nx > 1.0 || ny < 0.0 || ny > 1.0) {
+                                        coordError = "normalized x and y must be between 0 and 1";
+                                    } else {
+                                        x = nx * kTouchMaxX + 0.5;
+                                        y = ny * kTouchMaxY + 0.5;
+                                        haveCoords = true;
+                                    }
+                                }
+                            } else if (root.isMember("x") && root.isMember("y")) {
+                                x = root["x"].asDouble();
+                                y = root["y"].asDouble();
+                                if (x < 0 || y < 0) {
+                                    coordError = "x and y must not be negative";
+                                } else {
+                                    haveCoords = true;
+                                }
+                            }
+                        }
+                    } catch (...) {
+                        // Fall through to the missing-coordinates error below.
+                    }
+                }
+
+                if (!haveCoords) {
+                    response.success = false;
+                    // No double quotes in this message: ApiResponse.message is
+                    // serialized raw, so a quoted JSON example here would emit a
+                    // malformed body.
+                    response.message = coordError.empty()
+                        ? "Provide either x (0-639) and y (0-479), or a normalized "
+                          "object with x and y between 0 and 1"
+                        : coordError;
+                    response.data["error"] = coordError.empty() ? "missing_coordinates"
+                                                                : "invalid_coordinates";
+                } else {
+                    auto ux = static_cast<unsigned int>(x);
+                    auto uy = static_cast<unsigned int>(y);
+                    std::string detail;
+                    if (camera->remote_touch(ux, uy, &detail)) {
+                        response.success = true;
+                        response.message = "Remote touch executed";
+                        // data is a map of strings — assigning the integer
+                        // directly converts it to a single char.
+                        response.data["x"] = std::to_string(ux);
+                        response.data["y"] = std::to_string(uy);
+                        // The camera decides what a touch does — tracking AF,
+                        // spot AF or area select — from its own touch setting,
+                        // so point callers at the frame it actually produced.
+                        response.data["verify"] =
+                            "GET /tracking-frame to see what the camera is tracking";
+                    } else {
+                        response.success = false;
+                        response.message = detail.empty() ? "Remote touch failed" : detail;
+                    }
+                }
+            }
+            else if (actionName == "touch-cancel") {
+                std::string detail;
+                if (camera->cancel_remote_touch(&detail)) {
+                    response.success = true;
+                    response.message = "Remote touch cancelled";
+                } else {
+                    response.success = false;
+                    response.message = detail.empty() ? "Cancel remote touch failed" : detail;
                 }
             }
             else if (actionName == "half-press") {
