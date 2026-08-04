@@ -2271,8 +2271,10 @@ HttpResponse CameraWebServer::handleApiExecuteActionGeneric(const std::string& c
     // Parse JSON body for action parameters (if any)
     std::string params = "";
     if (!request.body.empty()) {
-        // For zoom and shutter actions, pass the entire body to allow parsing parameters
-        if (actionName == "zoom" || actionName == "shutter" || actionName == "focus-near-far") {
+        // These actions read their own fields out of the body, so hand it over
+        // whole. Everything else takes a single `params` string.
+        if (actionName == "zoom" || actionName == "shutter" ||
+            actionName == "focus-near-far" || actionName == "button") {
             params = request.body;
         } else {
             Json::Value root;

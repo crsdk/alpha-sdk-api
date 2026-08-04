@@ -16,6 +16,7 @@
 #include "CameraDeviceRest.h"
 #include "CrDebugString.h"  // stock: CrErrorString, for the generic warning event
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -535,6 +536,53 @@ CameraDeviceRest::FileDownloadResult CameraDeviceRest::download_remote_transfer_
 
 namespace {
 
+// REST button name -> CrCameraButtonFunction. The SDK value packs this code in
+// the upper 16 bits and an up/down value in the lower 16.
+const std::pair<const char*, CrInt32u> kCameraButtons[] = {
+    {"up",                        SDK::CrCameraButtonFunction_UpButton},
+    {"down",                      SDK::CrCameraButtonFunction_DownButton},
+    {"left",                      SDK::CrCameraButtonFunction_LeftButton},
+    {"right",                     SDK::CrCameraButtonFunction_RightButton},
+    {"enter",                     SDK::CrCameraButtonFunction_EnterButton},
+    {"menu",                      SDK::CrCameraButtonFunction_MenuButton},
+    {"multi-selector-up",         SDK::CrCameraButtonFunction_MultiSelectorUp},
+    {"multi-selector-down",       SDK::CrCameraButtonFunction_MultiSelectorDown},
+    {"multi-selector-left",       SDK::CrCameraButtonFunction_MultiSelectorLeft},
+    {"multi-selector-right",      SDK::CrCameraButtonFunction_MultiSelectorRight},
+    {"multi-selector-enter",      SDK::CrCameraButtonFunction_MultiSelectorEnter},
+    {"multi-selector-right-up",   SDK::CrCameraButtonFunction_MultiSelectorRightUp},
+    {"multi-selector-right-down", SDK::CrCameraButtonFunction_MultiSelectorRightDown},
+    {"multi-selector-left-up",    SDK::CrCameraButtonFunction_MultiSelectorLeftUp},
+    {"multi-selector-left-down",  SDK::CrCameraButtonFunction_MultiSelectorLeftDown},
+    {"fn",                        SDK::CrCameraButtonFunction_FnButton},
+    {"playback",                  SDK::CrCameraButtonFunction_PlaybackButton},
+    {"delete",                    SDK::CrCameraButtonFunction_DeleteButton},
+    {"mode",                      SDK::CrCameraButtonFunction_ModeButton},
+    {"c1",                        SDK::CrCameraButtonFunction_C1Button},
+    {"c2",                        SDK::CrCameraButtonFunction_C2Button},
+    {"c3",                        SDK::CrCameraButtonFunction_C3Button},
+    {"c4",                        SDK::CrCameraButtonFunction_C4Button},
+    {"c5",                        SDK::CrCameraButtonFunction_C5Button},
+    {"c6",                        SDK::CrCameraButtonFunction_C6Button},
+    {"c7",                        SDK::CrCameraButtonFunction_C7Button},
+    {"movie",                     SDK::CrCameraButtonFunction_MovieButton},
+    {"ael",                       SDK::CrCameraButtonFunction_AELButton},
+    {"af-on",                     SDK::CrCameraButtonFunction_AFOnButton},
+    {"home",                      SDK::CrCameraButtonFunction_HomeButton},
+    {"clips",                     SDK::CrCameraButtonFunction_ClipsButton},
+    {"slot-select",               SDK::CrCameraButtonFunction_SlotSelectButton},
+    {"display",                   SDK::CrCameraButtonFunction_DisplayButton},
+    {"cancel-back",               SDK::CrCameraButtonFunction_CancelBackButton},
+    {"thumbnail",                 SDK::CrCameraButtonFunction_ThumbnailButton},
+};
+
+bool lookupCameraButton(const std::string& name, CrInt32u& code) {
+    for (const auto& b : kCameraButtons) {
+        if (name == b.first) { code = b.second; return true; }
+    }
+    return false;
+}
+
 const char* focusFrameTypeName(int type) {
     switch (type) {
         case SDK::CrFocusFrameType_PhaseDetection_AFSensor:    return "phase-detection-af-sensor";
@@ -563,6 +611,108 @@ const char* focusFrameStateName(int state) {
 }
 
 }  // namespace
+
+std::vector<std::string> CameraDeviceRest::known_camera_buttons() {
+    std::vector<std::string> names;
+    names.reserve(std::size(kCameraButtons));
+    for (const auto& b : kCameraButtons) names.emplace_back(b.first);
+    return names;
+}
+
+std::vector<std::string> CameraDeviceRest::supported_camera_buttons() {
+    std::vector<std::string> names;
+
+    CrInt32 nprop = 0;
+    SDK::CrDeviceProperty* list = nullptr;
+    CrInt32u code = SDK::CrDeviceProperty_CameraButtonFunction;
+    if (CR_FAILED(SDK::GetSelectDeviceProperties(m_deviceHandle, 1, &code, &list, &nprop)) ||
+        nprop < 1 || list == nullptr) {
+        if (list) SDK::ReleaseDeviceProperties(m_deviceHandle, list);
+        return names;
+    }
+
+    // Reading the property yields the set of keys this body can drive; the
+    // values carry the button code in their upper 16 bits.
+    CrInt32u size = list[0].GetValueSize();
+    auto* values = reinterpret_cast<CrInt32u*>(list[0].GetValues());
+    if (values && size >= sizeof(CrInt32u)) {
+        CrInt32u count = size / static_cast<CrInt32u>(sizeof(CrInt32u));
+        for (CrInt32u i = 0; i < count; ++i) {
+            CrInt32u buttonCode = values[i] & 0xFFFF0000u;
+            for (const auto& b : kCameraButtons) {
+                if (b.second == buttonCode) {
+                    if (std::find(names.begin(), names.end(), b.first) == names.end())
+                        names.emplace_back(b.first);
+                    break;
+                }
+            }
+        }
+    }
+    SDK::ReleaseDeviceProperties(m_deviceHandle, list);
+    return names;
+}
+
+bool CameraDeviceRest::press_camera_button(const std::string& button,
+                                           const std::string& action,
+                                           std::string* errorDetail) {
+    CrInt32u buttonCode = 0;
+    if (!lookupCameraButton(button, buttonCode)) {
+        if (errorDetail) *errorDetail = "Unknown button: '" + button + "'";
+        return false;
+    }
+
+    // The SDK refuses to START a button press while a key is already held, so
+    // surface that rather than failing opaquely.
+    //
+    // A release must never be gated on this: after our own "down" the camera
+    // correctly reports AnyKeyOn, and blocking the matching "up" would strand
+    // the key in the held state with no way to let go.
+    if (action != "up") {
+        CrInt64u status = 0;
+        if (fetchOne(m_deviceHandle, SDK::CrDeviceProperty_CameraButtonFunctionStatus, status)) {
+            if (status != SDK::CrCameraButtonFunctionStatus_Idle) {
+                if (errorDetail)
+                    *errorDetail = "Camera is not idle — a key is already held. "
+                                   "Release it first with {\"action\":\"up\"}.";
+                return false;
+            }
+        }
+    }
+
+    auto write = [&](CrInt32u value) {
+        SDK::CrDeviceProperty prop;
+        prop.SetCode(SDK::CrDeviceProperty_CameraButtonFunction);
+        prop.SetCurrentValue(buttonCode | value);
+        prop.SetValueType(SDK::CrDataType_UInt32);
+        return !CR_FAILED(SDK::SetDeviceProperty(m_deviceHandle, &prop));
+    };
+
+    // Up = 0x0001, Down = 0x0002 — the reverse of CrCommandParam.
+    const CrInt32u kDown = SDK::CrCameraButtonFunctionValue_Down;
+    const CrInt32u kUp   = SDK::CrCameraButtonFunctionValue_Up;
+
+    if (action == "down") {
+        if (!write(kDown)) { if (errorDetail) *errorDetail = "Camera rejected the button-down"; return false; }
+        return true;
+    }
+    if (action == "up") {
+        if (!write(kUp)) { if (errorDetail) *errorDetail = "Camera rejected the button-up"; return false; }
+        return true;
+    }
+
+    // Full press. Release even if the press failed, so a partial failure cannot
+    // leave the camera believing a key is still held down.
+    bool downOk = write(kDown);
+    std::this_thread::sleep_for(100ms);
+    bool upOk = write(kUp);
+    if (!downOk || !upOk) {
+        if (errorDetail)
+            *errorDetail = downOk ? "Button press sent but release failed"
+                                  : "Camera rejected the button press";
+        return false;
+    }
+    return true;
+}
 
 CameraDeviceRest::AFAreaPositionResult CameraDeviceRest::get_af_area_position() {
     AFAreaPositionResult result;

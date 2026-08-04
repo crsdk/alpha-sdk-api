@@ -585,6 +585,66 @@ paths:
         "400":
           $ref: "#/components/responses/OperationRejected"
 
+  /api/cameras/{cameraId}/actions/button:
+    post:
+      operationId: pressCameraButton
+      x-fern-sdk-group-name: actions
+      x-fern-sdk-method-name: button
+      summary: Press a button on the camera body
+      description: |
+        Press a physical button — menu, enter, the D-pad, C1-C7, playback and so
+        on — as if someone pressed it on the body. Combined with live view and
+        `getOSDFrame` this is enough to drive the camera's own menus remotely and
+        read the result back off the screen.
+
+        Omit `action` for a full press. Send `down` and a later `up` to hold a
+        button, the same contract as `triggerShutter`.
+
+        ## Not every body exposes every button
+
+        The camera reports which keys it will accept, and that list is much
+        shorter than the full enum. An ILCE-7M4 reports 24: the D-pad and
+        multi-selector, `enter`, `menu`, `fn`, `playback`, `c1`-`c4`, `movie`,
+        `ael` and `af-on` — but **not** `delete`, `mode`, `c5`-`c7`, `display`,
+        `home`, `clips`, `slot-select`, `cancel-back` or `thumbnail`.
+
+        A rejected press returns `400` with the camera's own supported list in
+        `data.supported_buttons`, so you can discover the real set at runtime.
+
+        ## Held keys block new presses
+
+        The SDK only starts a press while the camera reports itself idle, so a
+        button already held — by this API or by a hand on the body — makes the
+        next press fail. A release is never blocked: an `up` always goes through,
+        so a held key can always be let go.
+
+        Requires priority key `pc-remote`.
+      tags: [Actions]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ButtonRequest"
+      responses:
+        "200":
+          description: Button press sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CameraResponse"
+        "400":
+          description: |
+            Missing or unknown `button`, invalid `action`, or the camera refused
+            the press because a key is already held. When the camera reported its
+            operable keys they are listed in `data.supported_buttons`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/cameras/{cameraId}/actions/half-press:
     post:
       operationId: halfPress
@@ -2036,6 +2096,59 @@ components:
           description: |
             Hex value from `available_values` (e.g. `"0x1007d"`), human-readable
             string (e.g. `"1/125"`, `"f/5.6"`, `"wide"`), or decimal string.
+
+    ButtonRequest:
+      type: object
+      required: [button]
+      properties:
+        button:
+          type: string
+          description: |
+            Which button to press. Not every body accepts every name — a `400`
+            response lists what the connected camera reports as operable.
+          enum:
+            - up
+            - down
+            - left
+            - right
+            - enter
+            - menu
+            - multi-selector-up
+            - multi-selector-down
+            - multi-selector-left
+            - multi-selector-right
+            - multi-selector-enter
+            - multi-selector-right-up
+            - multi-selector-right-down
+            - multi-selector-left-up
+            - multi-selector-left-down
+            - fn
+            - playback
+            - delete
+            - mode
+            - c1
+            - c2
+            - c3
+            - c4
+            - c5
+            - c6
+            - c7
+            - movie
+            - ael
+            - af-on
+            - home
+            - clips
+            - slot-select
+            - display
+            - cancel-back
+            - thumbnail
+        action:
+          type: string
+          enum: [press, down, up]
+          description: |
+            `down` to hold and `up` to release. Omit (or send `press`) for a full
+            down-then-up. An `up` is always accepted so a held key can be
+            released.
 
     ShutterRequest:
       type: object
