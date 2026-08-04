@@ -165,6 +165,27 @@ public:
                                                            CrInt32u file_id,
                                                            const std::string& save_path);
 
+    // --- Camera button presses --------------------------------------------
+    // Presses a physical button on the body (menu, enter, C1-C7, delete, …) by
+    // writing CrDeviceProperty_CameraButtonFunction: the button occupies the
+    // upper 16 bits and up/down the lower 16.
+    //
+    // Note the up/down values are the reverse of CrCommandParam — here
+    // Up = 0x0001 and Down = 0x0002.
+    //
+    // `action` is "press" (or empty) for a full down-then-up, or "down"/"up" to
+    // hold and release separately.
+    bool press_camera_button(const std::string& button, const std::string& action,
+                             std::string* errorDetail = nullptr);
+
+    // Every button name this layer understands, whether or not a given body
+    // supports it.
+    static std::vector<std::string> known_camera_buttons();
+
+    // The subset the connected camera reports as operable. Empty means the
+    // camera did not report the property at all.
+    std::vector<std::string> supported_camera_buttons();
+
     // --- AF area position -------------------------------------------------
     // One focus frame as the camera reports it. Position and size are
     // fractions: xNumerator/xDenominator is the frame centre across the live

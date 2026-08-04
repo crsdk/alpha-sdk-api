@@ -193,7 +193,10 @@ static const std::map<std::string, ActionMapping> ACTION_MAP = {
     {"half-press", ActionMapping("half-press", SDK::CrCommandId::CrCommandId_Release, SDK::CrCommandParam::CrCommandParam_Down, "s1_shooting", true)},
     {"af-shutter", ActionMapping("af-shutter", SDK::CrCommandId::CrCommandId_Release, SDK::CrCommandParam::CrCommandParam_Down, "af_shutter", true)},
     {"zoom", ActionMapping("zoom", 0, 0, "execute_zoom_operation_direct", true)},  // Custom zoom handler
-    {"focus-near-far", ActionMapping("focus-near-far", 0, 0, "focus_near_far", true)},  // Custom near/far focus step handler
+    {"focus-near-far", ActionMapping("focus-near-far", 0, 0, "focus_near_far", true)},
+    // Physical button presses (menu, enter, C1-C7, delete, ...). The button name
+    // and optional down/up action come from the request body, same as shutter.
+    {"button", ActionMapping("button", 0, 0, "press_camera_button", true)},  // Custom near/far focus step handler
     // Future actions can be added here with one line each:
     {"movie-rec", ActionMapping("movie-rec", SDK::CrCommandId::CrCommandId_MovieRecord, SDK::CrCommandParam::CrCommandParam_Down, "toggle_movie_recording", true)},
 };
@@ -6614,6 +6617,63 @@ ApiResponse CameraWebController::executeActionGeneric(const std::string& cameraI
                     camera->capture_image();
                     response.success = true;
                     response.message = "Shutter action executed successfully";
+                }
+            }
+            else if (actionName == "button") {
+                // Press a physical button on the body. Mirrors the shutter
+                // contract: omit `action` for a full press, or send down/up to
+                // hold and release separately.
+                std::string buttonName, buttonAction;
+                if (!params.empty()) {
+                    try {
+                        Json::Value root;
+                        Json::CharReaderBuilder builder;
+                        std::string errs;
+                        std::istringstream bodyStream(params);
+                        if (Json::parseFromStream(builder, bodyStream, &root, &errs)) {
+                            if (root.isMember("button")) buttonName = root["button"].asString();
+                            if (root.isMember("action")) buttonAction = root["action"].asString();
+                        }
+                    } catch (...) {
+                        // Fall through to the missing-button error below.
+                    }
+                }
+
+                if (buttonName.empty()) {
+                    response.success = false;
+                    response.message = "Missing 'button' in request body";
+                    response.data["error"] = "missing_button";
+                } else if (!buttonAction.empty() && buttonAction != "press" &&
+                           buttonAction != "down" && buttonAction != "up") {
+                    response.success = false;
+                    response.message = "Invalid action '" + buttonAction +
+                                       "'. Use 'press', 'down', 'up', or omit for a full press.";
+                    response.data["error"] = "invalid_action";
+                } else {
+                    std::string detail;
+                    if (camera->press_camera_button(buttonName, buttonAction, &detail)) {
+                        response.success = true;
+                        response.message = "Button '" + buttonName + "' " +
+                            (buttonAction == "down" ? "pressed down"
+                             : buttonAction == "up" ? "released"
+                             : "pressed");
+                        response.data["button"] = buttonName;
+                        response.data["action"] = buttonAction.empty() ? "press" : buttonAction;
+                    } else {
+                        response.success = false;
+                        response.message = detail.empty() ? "Button press failed" : detail;
+                        // A body that does not wire up a given key still accepts
+                        // the write, so list what this camera reports as usable.
+                        auto usable = camera->supported_camera_buttons();
+                        if (!usable.empty()) {
+                            std::string joined;
+                            for (size_t i = 0; i < usable.size(); ++i) {
+                                if (i) joined += ", ";
+                                joined += usable[i];
+                            }
+                            response.data["supported_buttons"] = joined;
+                        }
+                    }
                 }
             }
             else if (actionName == "half-press") {
