@@ -554,6 +554,16 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
         }
     }
 
+    // Pattern: GET /api/cameras/{cameraId}/tracking-frame
+    std::regex trackingFramePattern(R"(^/api/cameras/([^/]+)/tracking-frame$)");
+    if (std::regex_match(request.path, matches, trackingFramePattern) && request.method == "GET") {
+        std::string cameraId = matches[1];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
+        return handleApiGetTrackingFrame(cameraId);
+    }
+
     // Pattern: /api/cameras/{cameraId}/live-view/{action}
     std::regex liveViewPattern(R"(^/api/cameras/([^/]+)/live-view/([^/]+)$)");
     if (std::regex_match(request.path, matches, liveViewPattern)) {
@@ -2274,7 +2284,8 @@ HttpResponse CameraWebServer::handleApiExecuteActionGeneric(const std::string& c
         // These actions read their own fields out of the body, so hand it over
         // whole. Everything else takes a single `params` string.
         if (actionName == "zoom" || actionName == "shutter" ||
-            actionName == "focus-near-far" || actionName == "button") {
+            actionName == "focus-near-far" || actionName == "button" ||
+            actionName == "touch") {
             params = request.body;
         } else {
             Json::Value root;
@@ -2797,6 +2808,91 @@ HttpResponse CameraWebServer::handleApiSetAFAreaPosition(const std::string& came
     out["data"] = data;
 
     response.body = out.toStyledString();
+    return response;
+}
+
+HttpResponse CameraWebServer::handleApiGetTrackingFrame(const std::string& cameraId) {
+    HttpResponse response;
+    response.contentType = "application/json";
+
+    std::cout << "🎯 Get Tracking Frame: GET /api/cameras/" << cameraId
+              << "/tracking-frame" << std::endl;
+
+    auto cameraDevice = m_cameraController->getCameraDevice(cameraId);
+    if (!cameraDevice) {
+        response.statusCode = 404;
+        response.body = R"({"success": false, "message": "Camera not found"})";
+        return response;
+    }
+
+    auto result = cameraDevice->get_tracking_frame();
+
+    Json::Value root;
+    Json::Value data;
+    data["available"] = result.available;
+
+    Json::Value frames(Json::arrayValue);
+    for (const auto& f : result.frames) {
+        Json::Value jf;
+        jf["type"] = f.typeName;
+        jf["state"] = f.stateName;
+        jf["priority"] = f.priority;
+
+        // Normalized 0-1 centre — what a UI needs to place the box over a frame
+        // of any resolution.
+        double nx = f.xDenominator ? static_cast<double>(f.xNumerator) / f.xDenominator : 0.0;
+        double ny = f.yDenominator ? static_cast<double>(f.yNumerator) / f.yDenominator : 0.0;
+        Json::Value normalized;
+        normalized["x"] = nx;
+        normalized["y"] = ny;
+        jf["normalized"] = normalized;
+
+        // Same centre in the coordinate space the touch action expects, so the
+        // tracked subject's position can be fed straight back in.
+        Json::Value position;
+        position["x"] = static_cast<int>(nx * kAFPositionMaxX + 0.5);
+        position["y"] = static_cast<int>(ny * kAFPositionMaxY + 0.5);
+        jf["position"] = position;
+
+        Json::Value size;
+        size["width"] = f.width;
+        size["height"] = f.height;
+        size["normalized_width"] =
+            f.xDenominator ? static_cast<double>(f.width) / f.xDenominator : 0.0;
+        size["normalized_height"] =
+            f.yDenominator ? static_cast<double>(f.height) / f.yDenominator : 0.0;
+        jf["size"] = size;
+
+        Json::Value raw;
+        raw["xNumerator"] = f.xNumerator;
+        raw["xDenominator"] = f.xDenominator;
+        raw["yNumerator"] = f.yNumerator;
+        raw["yDenominator"] = f.yDenominator;
+        jf["raw"] = raw;
+
+        frames.append(jf);
+    }
+    data["frames"] = frames;
+    data["frame_count"] = static_cast<int>(result.frames.size());
+
+    root["success"] = result.available;
+    if (result.available) {
+        // No frames is the ordinary answer when nothing is being tracked, so it
+        // is a successful read rather than an error.
+        root["message"] = result.frames.empty()
+            ? "No subject is being tracked"
+            : "Tracking frame retrieved";
+        response.statusCode = 200;
+    } else {
+        root["message"] = result.error.empty()
+            ? "Tracking frame not available. Start a touch with POST "
+              "/actions/touch, with live view active."
+            : result.error;
+        response.statusCode = 400;
+    }
+    root["data"] = data;
+
+    response.body = root.toStyledString();
     return response;
 }
 

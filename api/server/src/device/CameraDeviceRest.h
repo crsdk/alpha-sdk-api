@@ -215,6 +215,47 @@ public:
     // x is packed into the upper 16 bits and y into the lower 16.
     bool set_af_area_position(unsigned int x, unsigned int y, std::string* errorDetail = nullptr);
 
+    // --- Remote touch (tracking AF) ---------------------------------------
+    // Not the same thing as moving the AF box. set_af_area_position() drags a
+    // frame to a point and leaves it there; a remote touch seeds the camera's
+    // subject tracking, which then follows the subject on its own. It also works
+    // in focus areas that have no movable box, where set_af_area_position() has
+    // nothing to move.
+    //
+    // The camera reports the resulting box through its own live-view property
+    // rather than the AF area frame, so it gets its own struct — the payload is
+    // a CrTrackingFrameInfo, whose type field is a CrTrackingFrameType and not
+    // the CrFocusFrameType the AF frame carries.
+    struct TrackingFrame {
+        int          type = 0;        // CrTrackingFrameType
+        int          state = 0;       // CrFocusFrameState, shared with the AF frame
+        // Resolved here rather than in the HTTP layer, which holds no SDK types.
+        std::string  typeName;
+        std::string  stateName;
+        unsigned int priority = 0;
+        unsigned int xNumerator = 0, xDenominator = 0;
+        unsigned int yNumerator = 0, yDenominator = 0;
+        unsigned int width = 0, height = 0;
+    };
+    struct TrackingFrameResult {
+        bool                       available = false;  // property was readable
+        std::vector<TrackingFrame> frames;             // empty when nothing is tracked
+        std::string                error;
+    };
+
+    // The live-view property code aliases CrDeviceProperty_RemoteTouchOperation,
+    // so reading the touch property is what reports the tracking box.
+    TrackingFrameResult get_tracking_frame();
+
+    // Enable-status gates, the same idiom as LUT import and the settings files.
+    bool is_remote_touch_supported();
+    bool is_cancel_remote_touch_supported();
+
+    // Same packing as the AF area position: x in the upper 16 bits, y in the
+    // lower 16, X 0-639 and Y 0-479.
+    bool remote_touch(unsigned int x, unsigned int y, std::string* errorDetail = nullptr);
+    bool cancel_remote_touch(std::string* errorDetail = nullptr);
+
     // --- Camera-supplied display strings (LUT / base-look names) ---
     // Maps an SDK value to the camera's own display name for `type`. Results are
     // cached per session: bodies that never fire the display-string callback would
