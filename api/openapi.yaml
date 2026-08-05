@@ -270,6 +270,30 @@ paths:
       description: |
         Returns the current value, human-readable format, writability flag, and all
         values the camera currently accepts for this property.
+
+        ## `writable` and `available_values` are a snapshot, not a spec
+
+        Both describe the camera **right now**, and both move as other settings
+        change. Two things routinely surprise callers:
+
+        **The priority key gates writability.** Read a property while the camera
+        holds `camera-position` and most of the body reports `writable: false`
+        with an empty `available_values`. Claim `pc-remote` first — see
+        `setPriorityKey` — or you will conclude a camera cannot do things it can.
+        Measured on an ILCE-7M5: `focus-area` went from `writable: false` with no
+        values to `writable: true` with 24 values, purely from the priority key.
+
+        **Other properties gate the value list.** `focus-area` is the clearest
+        case: its Tracking variants only exist while `focus-mode` is a continuous
+        mode. On an ILCE-1M2 in `AF_S` the list has 12 entries and no Tracking
+        entries at all, so setting `0x17` (`Tracking Expand Flexible Spot`) is
+        rejected as not available — correctly, because at that moment it is not.
+        Switch `focus-mode` to `AF_C` and the Tracking variants appear.
+
+        So do not cache these fields, and do not treat a value's absence as
+        "this model cannot do it". Re-read the property after changing anything
+        related, and prefer a value taken from the live `available_values` over a
+        constant from another body.
       tags: [Properties]
       parameters:
         - $ref: "#/components/parameters/cameraId"
@@ -483,6 +507,57 @@ paths:
           description: |
             Missing or malformed body, coordinates out of range, or the camera
             rejected the write.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Camera not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/cameras/{cameraId}/fingerprint:
+    get:
+      operationId: getFingerprint
+      x-fern-sdk-group-name: connection
+      x-fern-sdk-method-name: getFingerprint
+      summary: Get the camera's authentication fingerprint
+      description: |
+        Return the fingerprint of a camera that uses **access authentication**,
+        for use as `auth.fingerprint` when connecting.
+
+        Read this rather than transcribing the value from the camera's network
+        screen. The value here comes from the SDK, which is what the connect
+        check compares against, and a hand-copied value is easy to get subtly
+        wrong — a single missing `=` of base64 padding fails with `0x8215`.
+
+        Works **before** connecting, which is the point: the fingerprint is an
+        input to `connectCamera`, not a result of it. The camera only needs to
+        have been discovered.
+
+        ## Cameras without access authentication
+
+        Returns `200` with `ssh_supported: false` and no `fingerprint`. That is
+        not an error — USB connections and bodies with authentication off need no
+        fingerprint at all.
+      tags: [Connection]
+      parameters:
+        - $ref: "#/components/parameters/cameraId"
+      responses:
+        "200":
+          description: |
+            Fingerprint retrieved, or the camera does not use access
+            authentication — check `ssh_supported`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FingerprintResponse"
+        "400":
+          description: |
+            The camera reports access authentication but the SDK could not read
+            its fingerprint.
           content:
             application/json:
               schema:
@@ -2010,14 +2085,22 @@ components:
           example: "1/125"
         writable:
           type: boolean
-          description: Whether this property is currently writable.
+          description: |
+            Whether this property is writable **in the camera's current state**.
+            Depends on the priority key: with `camera-position` held most of the
+            body reports `false`. Claim `pc-remote` before treating this as a
+            statement about the model. See `getProperty` for the full caveat.
         available_values:
           type: array
           items:
             $ref: "#/components/schemas/AvailableValue"
           description: |
-            Values the camera currently accepts. Empty array for properties
-            with no enumerated values (range properties, freeform strings).
+            Values the camera accepts **right now**. Empty for properties with no
+            enumerated values (ranges, freeform strings), and also when the
+            priority key blocks writes. The set can shrink or grow as other
+            properties change — `focus-area` loses its Tracking variants when
+            `focus-mode` is not continuous — so re-read after related changes
+            rather than caching.
           x-fern-property-name: availableValues
 
     AvailableValue:
@@ -2268,16 +2351,56 @@ components:
       properties:
         mode:
           $ref: "#/components/schemas/ConnectionMode"
+        auth:
+          $ref: "#/components/schemas/ConnectionAuth"
         username:
           type: string
-          description: For network cameras
+          deprecated: true
+          description: |
+            Deprecated — use `auth.username`. Still honoured, but it cannot carry
+            a fingerprint, so on its own it is not enough for a body with access
+            authentication switched on. `auth` wins when both are present.
         password:
           type: string
-          description: For network cameras
+          deprecated: true
+          description: Deprecated — use `auth.password`.
         reconnecting:
           type: string
           enum: ["on", "off"]
           description: Auto-reconnect on disconnection
+
+    ConnectionAuth:
+      type: object
+      description: |
+        Credentials for a camera with **access authentication** switched on.
+
+        Omit this entirely for USB, and for networked bodies with access
+        authentication off — that is the ordinary case and it connects
+        unauthenticated exactly as before.
+
+        A body that requires authentication needs all three fields together.
+        Verified on an ILCE-1M2 over Ethernet: the camera checks its own
+        fingerprint first and the credentials second, so the two failures are
+        reported separately.
+
+        Credentials are never echoed in a response and never written to the
+        server log — only whether authentication was attempted.
+      properties:
+        username:
+          type: string
+          description: Access-authentication user, as shown on the camera.
+        password:
+          type: string
+          format: password
+          description: Access-authentication password, as shown on the camera.
+        fingerprint:
+          type: string
+          description: |
+            The camera's fingerprint. **Get this from `getFingerprint`, not by
+            reading it off the camera screen** — the SDK's rendering is what the
+            connect check compares against, and a transcribed value is easy to
+            get subtly wrong. A single missing `=` of base64 padding is enough to
+            fail with `0x8215`.
 
     PropertySetRequest:
       type: object
@@ -2598,6 +2721,31 @@ components:
             yNumerator: { type: integer }
             yDenominator: { type: integer }
 
+    FingerprintResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            ssh_supported:
+              type: boolean
+              description: |
+                Whether this body uses access authentication. When `false`, no
+                fingerprint is returned and none is needed to connect.
+            fingerprint:
+              type: string
+              description: |
+                Pass verbatim as `auth.fingerprint`, including any trailing `=`.
+                Absent when `ssh_supported` is `false`.
+            length:
+              type: integer
+              description: |
+                Character count, so a caller can spot a truncated copy-paste.
+
     TrackingFrameResponse:
       type: object
       properties:
@@ -2694,8 +2842,12 @@ components:
               example: "3.0.0"
             sdkVersion:
               type: string
-              description: Sony Camera Remote SDK version embedded at build time
-              example: "V2.01.00"
+              description: |
+                Version of the Sony Camera Remote SDK this binary is linked
+                against, read at runtime via `GetSDKVersion()`. It reflects the
+                library actually loaded, so it tracks an SDK upgrade without a
+                code change.
+              example: "V2.02.00"
             uptime:
               type: integer
               description: Server uptime in seconds

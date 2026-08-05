@@ -190,7 +190,9 @@ public:
 
     // Main API methods that will be called from web server
     ApiResponse getStatus();
-    ApiResponse connectCamera(const std::string& connectionMode = "remote-transfer", const std::string& cameraId = "", const std::string& username = "", const std::string& password = "", const std::string& reconnecting = "off");
+    // username/password/fingerprint are only needed by bodies with access
+    // authentication switched on; leave empty for USB and unauthenticated bodies.
+    ApiResponse connectCamera(const std::string& connectionMode = "remote-transfer", const std::string& cameraId = "", const std::string& username = "", const std::string& password = "", const std::string& reconnecting = "off", const std::string& fingerprint = "");
     ApiResponse disconnectCamera();
     ApiResponse disconnectCamera(const std::string& cameraId);  // Per-camera overload
     ApiResponse getStatus(const std::string& cameraId);          // Per-camera overload
@@ -320,6 +322,9 @@ public:
 
     // Camera device access for SD card operations
     std::shared_ptr<CameraDevice> getCameraDevice(const std::string& cameraId);
+    // Connected cameras, falling back to anything discovery has seen. Use this
+    // for pre-connect reads such as the fingerprint.
+    std::shared_ptr<CameraDevice> getDiscoveredCameraDevice(const std::string& cameraId);
 
     // Get connection mode for a camera (for dispatch logic in SD card, etc.)
     ConnectionMode getConnectionMode(const std::string& cameraId);

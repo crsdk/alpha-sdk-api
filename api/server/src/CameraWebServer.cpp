@@ -554,6 +554,16 @@ HttpResponse CameraWebServer::handleRequest(const HttpRequest& request) {
         }
     }
 
+    // Pattern: GET /api/cameras/{cameraId}/fingerprint
+    std::regex fingerprintPattern(R"(^/api/cameras/([^/]+)/fingerprint$)");
+    if (std::regex_match(request.path, matches, fingerprintPattern) && request.method == "GET") {
+        std::string cameraId = matches[1];
+        if (isPlaceholderCameraId(cameraId)) {
+            return invalidCameraIdResponse();
+        }
+        return handleApiGetFingerprint(cameraId);
+    }
+
     // Pattern: GET /api/cameras/{cameraId}/tracking-frame
     std::regex trackingFramePattern(R"(^/api/cameras/([^/]+)/tracking-frame$)");
     if (std::regex_match(request.path, matches, trackingFramePattern) && request.method == "GET") {
@@ -783,6 +793,7 @@ HttpResponse CameraWebServer::handleApiConnect(const HttpRequest& request) {
     std::string cameraId = "";
     std::string username = "";
     std::string password = "";
+    std::string fingerprint = "";
 
     // Parse JSON body if present
     if (request.method == "POST" && !request.body.empty()) {
@@ -805,6 +816,14 @@ HttpResponse CameraWebServer::handleApiConnect(const HttpRequest& request) {
                 if (root.isMember("password") && root["password"].isString()) {
                     password = root["password"].asString();
                 }
+                // Same `auth` object the live handler accepts, so the two do not
+                // drift. `auth` wins over the legacy top-level fields.
+                if (root.isMember("auth") && root["auth"].isObject()) {
+                    const Json::Value& auth = root["auth"];
+                    if (auth.isMember("username")) username = auth["username"].asString();
+                    if (auth.isMember("password")) password = auth["password"].asString();
+                    if (auth.isMember("fingerprint")) fingerprint = auth["fingerprint"].asString();
+                }
                 std::cout << "Parsed connect request - Mode: " << connectionMode << ", CameraId: " << cameraId << std::endl;
             } else {
                 std::cout << "Failed to parse JSON body: " << errs << std::endl;
@@ -814,7 +833,7 @@ HttpResponse CameraWebServer::handleApiConnect(const HttpRequest& request) {
         }
     }
 
-    auto result = m_cameraController->connectCamera(connectionMode, cameraId, username, password);
+    auto result = m_cameraController->connectCamera(connectionMode, cameraId, username, password, "off", fingerprint);
 
     HttpResponse response;
     response.contentType = "application/json";
@@ -2153,6 +2172,7 @@ HttpResponse CameraWebServer::handleApiConnectCamera(const std::string& cameraId
     std::string connectionMode = "remote-transfer";
     std::string username = "";
     std::string password = "";
+    std::string fingerprint = "";
     std::string reconnecting = "off"; // default to off for backward compatibility
 
     if (!request.body.empty()) {
@@ -2165,11 +2185,19 @@ HttpResponse CameraWebServer::handleApiConnectCamera(const std::string& cameraId
             if (root.isMember("mode")) {
                 connectionMode = root["mode"].asString();
             }
+            // Legacy top-level credentials, kept working; `auth` wins when both
+            // are present.
             if (root.isMember("username")) {
                 username = root["username"].asString();
             }
             if (root.isMember("password")) {
                 password = root["password"].asString();
+            }
+            if (root.isMember("auth") && root["auth"].isObject()) {
+                const Json::Value& auth = root["auth"];
+                if (auth.isMember("username")) username = auth["username"].asString();
+                if (auth.isMember("password")) password = auth["password"].asString();
+                if (auth.isMember("fingerprint")) fingerprint = auth["fingerprint"].asString();
             }
             if (root.isMember("reconnecting")) {
                 reconnecting = root["reconnecting"].asString();
@@ -2177,7 +2205,7 @@ HttpResponse CameraWebServer::handleApiConnectCamera(const std::string& cameraId
         }
     }
 
-    auto result = m_cameraController->connectCamera(connectionMode, cameraId, username, password, reconnecting);
+    auto result = m_cameraController->connectCamera(connectionMode, cameraId, username, password, reconnecting, fingerprint);
     response.body = m_cameraController->toJson(result);
     response.statusCode = result.success ? 200 : 400;
 
@@ -2811,6 +2839,59 @@ HttpResponse CameraWebServer::handleApiSetAFAreaPosition(const std::string& came
     return response;
 }
 
+HttpResponse CameraWebServer::handleApiGetFingerprint(const std::string& cameraId) {
+    HttpResponse response;
+    response.contentType = "application/json";
+
+    std::cout << "🔑 Get Fingerprint: GET /api/cameras/" << cameraId
+              << "/fingerprint" << std::endl;
+
+    auto cameraDevice = m_cameraController->getDiscoveredCameraDevice(cameraId);
+    if (!cameraDevice) {
+        response.statusCode = 404;
+        response.body = R"({"success": false, "message": "Camera not found"})";
+        return response;
+    }
+
+    Json::Value root;
+    Json::Value data;
+
+    bool ssh = cameraDevice->ssh_supported();
+    data["ssh_supported"] = ssh;
+
+    if (!ssh) {
+        // Not an error: most bodies, and every USB connection, need no
+        // fingerprint at all.
+        root["success"] = true;
+        root["message"] = "This camera does not use access authentication; "
+                          "no fingerprint is needed to connect.";
+        response.statusCode = 200;
+        root["data"] = data;
+        response.body = root.toStyledString();
+        return response;
+    }
+
+    std::string fp = cameraDevice->get_fingerprint();
+    if (fp.empty()) {
+        root["success"] = false;
+        root["message"] = "Camera reports access authentication, but the SDK could "
+                          "not read its fingerprint.";
+        response.statusCode = 400;
+    } else {
+        data["fingerprint"] = fp;
+        data["length"] = static_cast<int>(fp.size());
+        root["success"] = true;
+        root["message"] = "Pass this value as auth.fingerprint when connecting. "
+                          "It comes from the SDK, which is what the connect check "
+                          "compares against.";
+        response.statusCode = 200;
+    }
+    root["data"] = data;
+
+    response.body = root.toStyledString();
+    return response;
+}
+
 HttpResponse CameraWebServer::handleApiGetTrackingFrame(const std::string& cameraId) {
     HttpResponse response;
     response.contentType = "application/json";
@@ -3145,12 +3226,21 @@ HttpResponse CameraWebServer::handleApiServerStatus() {
     platform = "unknown";
 #endif
 
+    // Ask the SDK rather than hardcoding it. GetSDKVersion() packs the version
+    // one byte per field, most significant first: 0x02020000 is V2.02.00.
+    // This was a literal "V2.01.00" and had already drifted a release behind
+    // the shipped library.
+    CrInt32u sdkVer = SCRSDK::GetSDKVersion();
+    char sdkVersion[16];
+    snprintf(sdkVersion, sizeof(sdkVersion), "V%u.%02u.%02u",
+             (sdkVer >> 24) & 0xFF, (sdkVer >> 16) & 0xFF, (sdkVer >> 8) & 0xFF);
+
     std::ostringstream json;
     json << "{\n"
          << "  \"success\": true,\n"
          << "  \"server\": {\n"
          << "    \"version\": \"3.0.0\",\n"
-         << "    \"sdkVersion\": \"V2.01.00\",\n"
+         << "    \"sdkVersion\": \"" << sdkVersion << "\",\n"
          << "    \"uptime\": " << uptime << ",\n"
          << "    \"platform\": \"" << platform << "\"\n"
          << "  },\n"

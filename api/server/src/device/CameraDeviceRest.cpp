@@ -82,21 +82,56 @@ CameraDeviceRest::~CameraDeviceRest() {
 }
 
 // --- Connection lifecycle (non-interactive) ------------------------------
-// SSH-authenticated connections require a pre-negotiated fingerprint/password;
-// the interactive stdin prompts from the SDK sample are intentionally omitted.
-// Local USB/remote connections (the common REST case) use empty credentials.
+// Credentials are supplied by the caller rather than prompted for; the
+// interactive stdin prompts from the SDK sample are intentionally omitted.
+//
+// A body with access authentication switched on needs all three of userId,
+// password and fingerprint. Everything else — USB, and networked bodies with
+// authentication off — passes none of them and takes the path below unchanged:
+// the SDK still wants a non-null user id, so the historical "admin" default
+// stands in, with an empty password and a zero-length fingerprint.
 bool CameraDeviceRest::connect(SCRSDK::CrSdkControlMode openMode,
-                               SCRSDK::CrReconnectingSet reconnect) {
+                               SCRSDK::CrReconnectingSet reconnect,
+                               const std::string& userId,
+                               const std::string& password,
+                               const std::string& fingerprint) {
     m_modeSDK = openMode;
-    const char* inputId = "admin";
+    m_lastError.store(0);
+    const char* inputId = userId.empty() ? "admin" : userId.c_str();
     auto status = SDK::Connect(m_info, this, &m_deviceHandle, openMode, reconnect,
-                               inputId, "", "", 0);
+                               inputId, password.c_str(), fingerprint.c_str(),
+                               static_cast<CrInt32u>(fingerprint.size()));
     if (CR_FAILED(status)) {
         return false;
     }
     // Default save destination to the current working directory.
     set_save_info(".", "", kImageSaveAutoStartNo, nullptr);
     return true;
+}
+
+bool CameraDeviceRest::ssh_supported() const {
+    return m_info && m_info->GetSSHsupport() == SDK::CrSSHsupportValue::CrSSHsupport_ON;
+}
+
+std::string CameraDeviceRest::get_fingerprint() {
+    // Buffer size and the (buf, len) construction follow the SDK sample; the
+    // returned bytes are not guaranteed NUL-terminated, so build with the length.
+    CrInt32u fpLen = 0;
+    char fpBuff[128] = {0};
+    if (CR_FAILED(SDK::GetFingerprint(m_info, fpBuff, &fpLen)) || fpLen == 0) return "";
+    return std::string(fpBuff, fpLen);
+}
+
+bool CameraDeviceRest::wait_for_connection(int timeoutMs) {
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(timeoutMs);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (m_connected.load()) return true;
+        // A reported error is terminal — no point waiting out the timeout.
+        if (m_lastError.load() != 0) return false;
+        std::this_thread::sleep_for(100ms);
+    }
+    return m_connected.load();
 }
 
 bool CameraDeviceRest::disconnect() {
@@ -1271,7 +1306,12 @@ void CameraDeviceRest::OnWarningExt(CrInt32u warning, CrInt32 param1, CrInt32 /*
     }
     m_eventCallback("afStatus", "{\"state\":\"" + state + "\",\"source\":\"OnWarningExt\"}");
 }
-void CameraDeviceRest::OnError(CrInt32u /*error*/) {}
+void CameraDeviceRest::OnError(CrInt32u error) {
+    // Where an authentication rejection lands. Recording it is what lets a
+    // caller tell a refused password from a connection that simply has not
+    // finished yet.
+    m_lastError.store(error);
+}
 
 void CameraDeviceRest::OnPropertyChangedCodes(CrInt32u num, CrInt32u* codes) {
     // Correlate a pending property-set wait.

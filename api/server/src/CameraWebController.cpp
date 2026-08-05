@@ -187,6 +187,11 @@ static const std::map<std::string, PropertyMapping> PROPERTY_MAP = {
     {"aps-c-s35", PropertyMapping("aps-c-s35", SDK::CrDevicePropertyCode::CrDeviceProperty_APS_C_S35, "", false)},
 };
 
+// How long to wait for OnConnected/OnError before calling a connect failed.
+// Generous: an Ethernet body with access authentication negotiates before it
+// reports, and a premature failure is worse than a slow success.
+static constexpr int kConnectTimeoutMs = 15000;
+
 static const std::map<std::string, ActionMapping> ACTION_MAP = {
     // Core actions for testing the RESTful infrastructure
     {"shutter", ActionMapping("shutter", SDK::CrCommandId::CrCommandId_Release, SDK::CrCommandParam::CrCommandParam_Down, "capture_image", true)},
@@ -489,7 +494,7 @@ ApiResponse CameraWebController::getStatus() {
     return response;
 }
 
-ApiResponse CameraWebController::connectCamera(const std::string& connectionMode, const std::string& cameraId, const std::string& username, const std::string& password, const std::string& reconnecting) {
+ApiResponse CameraWebController::connectCamera(const std::string& connectionMode, const std::string& cameraId, const std::string& username, const std::string& password, const std::string& reconnecting, const std::string& fingerprint) {
     std::lock_guard<std::mutex> lock(m_discoveryMutex);
 
     ApiResponse response;
@@ -599,14 +604,25 @@ ApiResponse CameraWebController::connectCamera(const std::string& connectionMode
     std::string preConnectId = std::string(targetCamera->get_id().data());
     wireCameraEventCallback(targetCamera, preConnectId);
 
-    if (!username.empty() && !password.empty()) {
-        std::cout << "🔐 Using SSH authentication for camera connection" << std::endl;
-        // Note: The CameraDevice::connect method may need to be extended to support SSH credentials
-        // For now, we'll use the basic connection and log the credentials
-        std::cout << "   Username: " << username << std::endl;
-        connect_result = targetCamera->connect(sdkMode, reconnectMode);
-    } else {
-        connect_result = targetCamera->connect(sdkMode, reconnectMode);
+    // Credentials are forwarded to the SDK only when supplied. Bodies with
+    // access authentication off — and every USB connection — pass empty
+    // strings and take the unauthenticated path inside connect().
+    //
+    // Never log the credentials themselves, only whether they were used.
+    if (!username.empty()) {
+        std::cout << "🔐 Connecting with access authentication"
+                  << (fingerprint.empty() ? " (no fingerprint supplied)" : "")
+                  << std::endl;
+    }
+    connect_result = targetCamera->connect(sdkMode, reconnectMode,
+                                           username, password, fingerprint);
+
+    // SDK::Connect returning OK only means the request was accepted; the real
+    // outcome lands on OnConnected or OnError afterwards. Reporting success off
+    // the synchronous return made every connect look like it worked — including
+    // one with a deliberately wrong password. Wait for the actual answer.
+    if (connect_result) {
+        connect_result = targetCamera->wait_for_connection(kConnectTimeoutMs);
     }
 
     if (connect_result) {
@@ -654,10 +670,56 @@ ApiResponse CameraWebController::connectCamera(const std::string& connectionMode
         }
     } else {
         response.success = false;
-        response.message = "Failed to connect to camera. Please check camera status and try again.";
         response.camera.connected = false;
 
-        std::cout << "❌ Web controller failed to connect to camera" << std::endl;
+        // Distinguish the failure modes. An SDK error means the camera actively
+        // refused; no error means the connection simply never completed, which
+        // on a networked body usually means remote shooting is not enabled.
+        unsigned int err = targetCamera->last_error();
+        if (err != 0) {
+            char hex[32];
+            snprintf(hex, sizeof(hex), "0x%08X", err);
+            response.data["error_code"] = hex;
+
+            // The SDK separates the two halves of the handshake, and the codes
+            // were confirmed on an ILCE-1M2: server authentication is the
+            // camera's fingerprint, user authentication is the password.
+            switch (err) {
+                case SDK::CrError_Connect_SSH_ServerAuthenticationFailed:
+                    response.message =
+                        std::string("Fingerprint mismatch (") + hex + "). Fetch the "
+                        "camera's own value from GET /fingerprint and send that "
+                        "verbatim — including any trailing '=' padding.";
+                    break;
+                case SDK::CrError_Connect_SSH_UserAuthenticationFailed:
+                    response.message =
+                        std::string("Username or password rejected (") + hex +
+                        "). The fingerprint was accepted, so only the credentials "
+                        "are wrong.";
+                    break;
+                case SDK::CrError_Connect_SSH_NotSupported:
+                    response.message =
+                        std::string("This camera does not support access "
+                                    "authentication (") + hex + ").";
+                    break;
+                default:
+                    response.message =
+                        std::string("Camera refused the connection (") + hex + ")";
+                    if (!username.empty()) {
+                        response.message += ". Check the access-authentication "
+                                            "username, password and fingerprint.";
+                    }
+                    break;
+            }
+        } else {
+            response.message = "Connection did not complete within " +
+                               std::to_string(kConnectTimeoutMs / 1000) +
+                               "s. If this is a network connection, check that remote "
+                               "shooting is enabled on the camera.";
+        }
+
+        std::cout << "❌ Web controller failed to connect to camera: "
+                  << response.message << std::endl;
     }
 
     return response;
@@ -6998,6 +7060,20 @@ std::shared_ptr<CameraDevice> CameraWebController::getCameraDevice(const std::st
         return it->second->camera;
     }
 
+    return nullptr;
+}
+
+std::shared_ptr<CameraDevice> CameraWebController::getDiscoveredCameraDevice(const std::string& cameraId) {
+    // Connected cameras first, then anything discovery has seen. Reading a
+    // fingerprint is the one thing that has to work BEFORE connecting — it is
+    // an input to the connect, not a result of it — so the connected-only
+    // lookup in getCameraDevice() is not sufficient here.
+    if (auto connected = getCameraDevice(cameraId)) return connected;
+
+    std::lock_guard<std::mutex> lock(m_discoveryMutex);
+    for (const auto& camera : m_availableCameras) {
+        if (camera && std::string(camera->get_id().data()) == cameraId) return camera;
+    }
     return nullptr;
 }
 
