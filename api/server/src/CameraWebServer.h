@@ -215,6 +215,7 @@ private:
     HttpResponse handleApiGetAFAreaPosition(const std::string& cameraId);
     HttpResponse handleApiSetAFAreaPosition(const std::string& cameraId, const HttpRequest& request);
     HttpResponse handleApiGetTrackingFrame(const std::string& cameraId);
+    HttpResponse handleApiGetFingerprint(const std::string& cameraId);
 
     // Server management endpoints
     HttpResponse handleApiServerStatus();

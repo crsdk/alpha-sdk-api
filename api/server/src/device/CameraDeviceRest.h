@@ -74,10 +74,31 @@ public:
     void setEventCallback(SdkEventCallback cb) { m_eventCallback = std::move(cb); }
 
     // --- Connection lifecycle (non-interactive) ---
-    bool connect(SCRSDK::CrSdkControlMode openMode, SCRSDK::CrReconnectingSet reconnect);
+    // Credentials are optional and only apply to bodies with access
+    // authentication switched on. Leave them empty for USB and for networked
+    // bodies with authentication off — that path is unchanged.
+    bool connect(SCRSDK::CrSdkControlMode openMode, SCRSDK::CrReconnectingSet reconnect,
+                 const std::string& userId = "", const std::string& password = "",
+                 const std::string& fingerprint = "");
     bool disconnect();
     bool release();
     bool is_connected() const { return m_connected.load(); }
+
+    // SDK::Connect is asynchronous: it returns as soon as the request has been
+    // accepted, and the real outcome arrives later on OnConnected or OnError.
+    // Anything that reports success to a caller has to wait for that, otherwise
+    // a rejected password looks identical to a good one.
+    // Returns true once connected, false on error or timeout.
+    bool wait_for_connection(int timeoutMs);
+    unsigned int last_error() const { return m_lastError.load(); }
+
+    // Does this body use SSH / access authentication at all?
+    bool ssh_supported() const;
+    // The camera's own fingerprint, straight from the SDK. Sony's sample fetches
+    // this and asks the user to confirm it rather than having them transcribe it
+    // off the camera screen, which suggests the SDK's rendering is the only one
+    // Connect accepts. Empty on failure.
+    std::string get_fingerprint();
 
     // --- Identity / handle (primary contract used by the controller) ---
     std::int32_t get_number() const { return m_number; }
@@ -326,6 +347,8 @@ private:
     SCRSDK::ICrCameraObjectInfo* m_info;
     std::int64_t                 m_deviceHandle{0};
     std::atomic<bool>            m_connected{false};
+    // Last error reported by OnError; 0 when none. Cleared on each connect.
+    std::atomic<unsigned int>    m_lastError{0};
     cli::ConnectionType          m_connType{};
     SCRSDK::CrSdkControlMode     m_modeSDK{};
 
