@@ -35,7 +35,7 @@ info:
     identifier: MIT
   contact:
     name: Alpha Camera REST API
-    url: https://github.com/jordlee/alpha-sdk-api
+    url: https://github.com/crsdk/alpha-sdk-api
 
 servers:
   - url: http://{host}:{port}

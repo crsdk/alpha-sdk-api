@@ -7,7 +7,7 @@ description: "@alpha-sdk/client — typed REST client for Node, Electron, Tauri,
 
 - **npm:** [`@alpha-sdk/client`](https://www.npmjs.com/package/@alpha-sdk/client)
 - **Latest:** `0.3.0`
-- **Example app:** [`alpha-sdk-typescript`](https://github.com/jordlee/alpha-sdk-typescript)
+- **Example app:** [`alpha-sdk-typescript`](https://github.com/crsdk/alpha-sdk-typescript)
 
 ---
 

@@ -5,11 +5,11 @@ description: "AlphaSDK — native async/await client for iOS, macOS, tvOS, watch
 
 `AlphaSDK` is the official Swift client for the Alpha Camera REST API. It uses `URLSession` only (zero third-party dependencies) and exposes Swift concurrency throughout.
 
-- **SwiftPM:** [`https://github.com/jordlee/alpha-sdk-swift.git`](https://github.com/jordlee/alpha-sdk-swift)
+- **SwiftPM:** [`https://github.com/crsdk/alpha-sdk-swift.git`](https://github.com/crsdk/alpha-sdk-swift)
 - **Latest:** `0.3.1`
 - **Platforms:** iOS 15+, macOS 12+, tvOS 15+, watchOS 8+
 - **Swift:** 5.7+
-- **SDK repo + macOS sample app:** [`alpha-sdk-swift`](https://github.com/jordlee/alpha-sdk-swift)
+- **SDK repo + macOS sample app:** [`alpha-sdk-swift`](https://github.com/crsdk/alpha-sdk-swift)
 
 ---
 
@@ -18,7 +18,7 @@ description: "AlphaSDK — native async/await client for iOS, macOS, tvOS, watch
 Add to your `Package.swift` `dependencies`:
 
 ```swift
-.package(url: "https://github.com/jordlee/alpha-sdk-swift.git", from: "0.3.1"),
+.package(url: "https://github.com/crsdk/alpha-sdk-swift.git", from: "0.3.1"),
 ```
 
 Then add `AlphaSDK` to your target's dependencies:

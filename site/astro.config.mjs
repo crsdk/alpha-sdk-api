@@ -13,7 +13,7 @@ const base = '/alpha-sdk-api';
 // where docs.json had Examples as its own group, and would order pages
 // alphabetically instead of by reading order.
 export default defineConfig({
-  site: 'https://jordlee.github.io',
+  site: 'https://crsdk.github.io',
   base,
   integrations: [
     starlight({
@@ -31,7 +31,7 @@ export default defineConfig({
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/jordlee/alpha-sdk-api',
+          href: 'https://github.com/crsdk/alpha-sdk-api',
         },
       ],
       // Starlight ships Pagefind, built at deploy time. This is what replaces

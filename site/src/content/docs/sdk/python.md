@@ -8,7 +8,7 @@ description: "alpha-sdk-client — sync + async REST clients with Pydantic model
 - **PyPI:** [`alpha-sdk-client`](https://pypi.org/project/alpha-sdk-client/)
 - **Latest:** `0.3.0`
 - **Python:** 3.8+
-- **Example app / notebook helper:** [`alpha-sdk-python`](https://github.com/jordlee/alpha-sdk-python)
+- **Example app / notebook helper:** [`alpha-sdk-python`](https://github.com/crsdk/alpha-sdk-python)
 
 ---
 
@@ -226,8 +226,8 @@ res = await client.cameras.list()
 
 For a minimal notebook-oriented helper layer, see:
 
-- [`alpha-sdk-python`](https://github.com/jordlee/alpha-sdk-python)
-- [`notebook_data_collection.py`](https://github.com/jordlee/alpha-sdk-python/blob/main/notebook_data_collection.py)
+- [`alpha-sdk-python`](https://github.com/crsdk/alpha-sdk-python)
+- [`notebook_data_collection.py`](https://github.com/crsdk/alpha-sdk-python/blob/main/notebook_data_collection.py)
 
 ---
 
