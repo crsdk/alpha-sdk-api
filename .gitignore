@@ -103,3 +103,7 @@ changelog.txt
 
 # Generated docs site (assembled by .github/workflows/pages.yml)
 _site/
+
+# Jekyll local build cache
+site/.jekyll-cache/
+site/api-reference/openapi.yaml

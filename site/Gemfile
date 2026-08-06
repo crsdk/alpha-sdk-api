@@ -1,0 +1,12 @@
+# Pinned so the published site is reproducible and an unattended upgrade cannot
+# change how the docs render. Nobody is committed to maintaining this site, so a
+# build that keeps working unchanged is worth more than one that tracks latest.
+source "https://rubygems.org"
+
+gem "jekyll", "~> 4.4"
+gem "just-the-docs", "0.12.0"
+
+# Required by Jekyll on Ruby 3.4+, where these left stdlib.
+gem "csv"
+gem "base64"
+gem "bigdecimal"

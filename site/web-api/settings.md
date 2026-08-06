@@ -1,0 +1,133 @@
+---
+layout: "default"
+title: "Save & Recall Settings"
+description: "Camera settings file management — backup and restore camera configurations"
+parent: "REST API"
+nav_order: 11
+---
+
+Save and restore complete camera configurations using `.DAT` settings files. Not all cameras support settings download/upload — see [Compatibility]({{ site.baseurl }}/web-api/compatibility#api-compatibility) for the list.
+
+See the auto-generated [API reference]({{ site.baseurl }}/web-api/overview) for full request/response schemas.
+
+## Before you start: the camera has to allow it
+
+The SDK only permits these operations while the camera reports that it will accept them. Read the three gate properties with [`GET /properties/all`]({{ site.baseurl }}/web-api/properties) first — a `400` from either endpoint below usually means the camera is refusing, not that the request was malformed.
+
+| Property | Required value | Meaning |
+|---|---|---|
+| `camera-setting-save-enable` | `1` (Enable) | Camera will allow a download |
+| `camera-setting-read-enable` | `1` (Enable) | Camera will accept an upload |
+| `camera-setting-save-read-state` | `0` (Idle) | No transfer already in progress |
+
+{: .warning }
+> The camera will not enable either flag without recording media present — and on a two-slot body it must be **slot 1** specifically. An ILCE-7M4 with a card in slot 2 only reports `camera-setting-save-enable: 0` and rejects the call.
+
+
+---
+
+## Download Settings to PC
+
+`POST /api/cameras/{cameraId}/settings/download` — download the camera's current settings to a file on the host PC. Body: optional `filename` (e.g. `CUMSET.DAT`).
+
+{: .warning }
+> **There is no `save_path`.** Unlike the [SD card endpoints]({{ site.baseurl }}/web-api/sd-card), you do not choose where the file goes — it is always written to a `camera_settings/` directory relative to the **server's** working directory. The optional `filename` only names the file; the response reports where it actually landed in `data.path`.
+
+
+**curl**
+
+
+```bash
+curl -X POST http://localhost:8080/api/cameras/D10F60149B0C/settings/download \
+  -H "Content-Type: application/json" \
+  -d '{"filename": "CUMSET.DAT"}'
+```
+
+**Response**
+
+
+```json
+{
+  "success": true,
+  "message": "Camera settings downloaded successfully",
+  "camera": {
+    "connected": true,
+    "model": "ILCE-9M3",
+    "id": "D10F60149B0C"
+  },
+  "data": {
+    "path": "camera_settings/CUMSET.DAT"
+  }
+}
+```
+
+
+A typical settings file is around 180 KB. Completion also emits a [`downloadComplete`]({{ site.baseurl }}/web-api/events#downloadcomplete) SSE event.
+
+Gated on `camera-setting-save-enable` being `1` with `camera-setting-save-read-state` at `0`.
+
+---
+
+## Upload Settings to Camera
+
+`POST /api/cameras/{cameraId}/settings/upload` — restore a previously saved settings file. Body: `filename` (**required**).
+
+{: .warning }
+> **The camera reboots and drops the connection** once the settings are applied. Your session ends — reconnect afterwards. The response carries this as `data.warning`.
+
+
+`filename` is resolved inside the server's `camera_settings/` directory — use [List Settings Files](#list-settings-files) to see what is available.
+
+**curl**
+
+
+```bash
+curl -X POST http://localhost:8080/api/cameras/D10F60149B0C/settings/upload \
+  -H "Content-Type: application/json" \
+  -d '{"filename": "CUMSET.DAT"}'
+```
+
+**Response**
+
+
+```json
+{
+  "success": true,
+  "message": "Camera settings upload started",
+  "data": {
+    "warning": "Camera will reboot and disconnect after applying settings"
+  }
+}
+```
+
+
+The result arrives as an SSE `settingsResult` event:
+
+```json
+{"operation": "read", "success": true}
+```
+
+Gated the same way as download, but on `camera-setting-read-enable` being `1` (with `camera-setting-save-read-state` at `0`). Recording media must be present — slot 1 on two-slot bodies.
+
+---
+
+## List Settings Files
+
+`GET /api/cameras/{cameraId}/settings/files` — list the settings files available in the server's `camera_settings/` directory.
+
+**curl**
+
+
+```bash
+curl http://localhost:8080/api/cameras/D10F60149B0C/settings/files
+```
+
+**Response**
+
+
+```json
+{
+  "success": true,
+  "files": ["CUMSET.DAT", "CUMSET_Backup.DAT"]
+}
+```

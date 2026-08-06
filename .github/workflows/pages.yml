@@ -48,17 +48,27 @@ jobs:
       - name: Validate OpenAPI spec
         run: npx --yes @redocly/cli@2 lint api/openapi.yaml
 
-      - name: Assemble site
-        run: |
-          set -euo pipefail
-          mkdir -p _site
-          cp -R site/. _site/
-          # Single source of truth: the spec beside the server.
-          cp api/openapi.yaml _site/api-reference/openapi.yaml
-          # Pages runs Jekyll over the artifact unless told not to. Our filenames
-          # are plain, but .nojekyll removes the whole class of surprise (files
-          # and directories beginning with _ or . being silently dropped).
-          touch _site/.nojekyll
+      # The spec is copied in rather than committed under site/, so there is
+      # exactly one copy in the repo — the one beside the server that
+      # implements it. Runs before the build so Jekyll picks it up as a static
+      # file.
+      - name: Stage the OpenAPI spec into the site
+        run: cp api/openapi.yaml site/api-reference/openapi.yaml
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true            # installs from Gemfile.lock and caches
+          working-directory: site
+
+      # Built with the pinned just-the-docs gem rather than `remote_theme:`, so
+      # the deploy does not fetch a theme over the network — the same reasoning
+      # that made us vendor the Scalar bundle.
+      - name: Build with Jekyll
+        working-directory: site
+        env:
+          JEKYLL_ENV: production
+        run: bundle exec jekyll build --destination "$GITHUB_WORKSPACE/_site"
 
       - name: Assert the vendored bundle is present and unmodified
         run: |

@@ -31,10 +31,11 @@ info:
     The camera's priority key **must** be set to `pc-remote` before it accepts any
     remote property changes or shooting commands.
   license:
-    name: Proprietary
+    name: MIT
+    identifier: MIT
   contact:
-    name: Camera Remote SDK
-    url: https://github.com/ocjlee888/camera-remote-sdk-project
+    name: Alpha Camera REST API
+    url: https://github.com/jordlee/alpha-sdk-api
 
 servers:
   - url: http://{host}:{port}
