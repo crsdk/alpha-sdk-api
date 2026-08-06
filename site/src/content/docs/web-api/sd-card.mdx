@@ -1,0 +1,143 @@
+---
+title: "File Transfer"
+description: "Browse and download files from the camera's SD card, and configure auto-save destination"
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components';
+
+:::caution
+Requires `remote-transfer` or `contents` connection mode.
+:::
+
+See the auto-generated [API reference](/alpha-sdk-api/web-api/overview/) for full request/response schemas.
+
+## List Files
+
+`GET /api/cameras/{cameraId}/sd-card/slot/{slotNumber}/files` — list files on SD card slot 1 or 2.
+
+<Tabs>
+<TabItem label="curl">
+
+```bash
+curl http://localhost:8080/api/cameras/D10F60149B0C/sd-card/slot/1/files
+```
+
+</TabItem>
+<TabItem label="Response">
+
+```json
+{
+  "success": true,
+  "slot": 1,
+  "file_count": 3,
+  "files": [
+    {
+      "content_id": 12345,
+      "file_id": 67890,
+      "file_path": "DCIM/100MSDCF/DSC00001.ARW",
+      "file_size": 25165824
+    }
+  ]
+}
+```
+
+</TabItem>
+</Tabs>
+
+
+---
+
+## Download File
+
+`POST /api/cameras/{cameraId}/sd-card/slot/{slotNumber}/files/{contentId}/{fileId}/download` — download a specific file from the SD card to the host PC. Optional body `save_path` overrides the server default.
+
+<Tabs>
+<TabItem label="curl">
+
+```bash
+curl -X POST http://localhost:8080/api/cameras/D10F60149B0C/sd-card/slot/1/files/12345/67890/download \
+  -H "Content-Type: application/json" \
+  -d '{"save_path": "/Users/me/Photos"}'
+```
+
+</TabItem>
+</Tabs>
+
+
+Listen for `transferProgress` SSE events to track download progress in `remote-transfer` mode.
+
+---
+
+## Download Thumbnail
+
+`POST /api/cameras/{cameraId}/sd-card/slot/{slotNumber}/files/{contentId}/{fileId}/thumbnail` — download a compressed JPEG thumbnail (~50-60 KB) for fast preview or ML evaluation. Much faster than pulling the full file. Returns HTTP 202 and delivers completion via SSE.
+
+<Tabs>
+<TabItem label="curl">
+
+```bash
+curl -X POST http://localhost:8080/api/cameras/D10F60149B0C/sd-card/slot/1/files/12345/67890/thumbnail \
+  -H "Content-Type: application/json" \
+  -d '{"save_path": "/Users/me/thumbnails"}'
+```
+
+</TabItem>
+</Tabs>
+
+
+---
+
+## Download Screennail
+
+`POST /api/cameras/{cameraId}/sd-card/slot/{slotNumber}/files/{contentId}/{fileId}/screennail` — medium-resolution JPEG preview (~250-300 KB). Higher quality than thumbnail, still much smaller than the full file. Returns HTTP 202.
+
+<Tabs>
+<TabItem label="curl">
+
+```bash
+curl -X POST http://localhost:8080/api/cameras/D10F60149B0C/sd-card/slot/1/files/12345/67890/screennail \
+  -H "Content-Type: application/json" \
+  -d '{"save_path": "/Users/me/previews"}'
+```
+
+</TabItem>
+</Tabs>
+
+
+:::tip
+**Size comparison for ML workflows:**
+
+| Type | Size | Use Case |
+|------|------|----------|
+| Thumbnail | ~50-60 KB | Fast ML triage, grid views |
+| Screennail | ~250-300 KB | Detailed evaluation, composition analysis |
+| Full file | ~35 MB (ARW) | Final delivery, full processing |
+
+Both thumbnail and screennail endpoints are async — listen for `transferProgress` SSE events with `percent: 100` for completion.
+:::
+
+
+---
+
+## Save Info
+
+Configure where auto-transferred images are saved on the host PC.
+
+:::caution
+Save info only applies in `remote` connection mode, where images auto-transfer to the host PC. It has no effect in `remote-transfer` or `contents` modes.
+:::
+
+
+- `GET /api/cameras/{cameraId}/settings/save-info` — read current path / prefix / startNo
+- `PUT /api/cameras/{cameraId}/settings/save-info` — update values
+
+```bash
+curl -X PUT http://localhost:8080/api/cameras/D10F60149B0C/settings/save-info \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/Users/me/Photos", "prefix": "SHOOT", "startNo": 1}'
+```
+
+
+:::note
+For typed file-listing and download helpers, use the language SDK pages and examples.
+:::

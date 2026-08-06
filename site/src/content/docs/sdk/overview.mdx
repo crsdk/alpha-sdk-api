@@ -1,0 +1,77 @@
+---
+title: "SDK Reference"
+description: "Three language clients + a Node.js server manager — pick what matches your stack"
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The Alpha Camera SDK family is a set of official REST clients for the Alpha Camera REST API. Each is published independently and tracks the same versioned API surface.
+
+| Language | Package | Registry | Reference |
+|---|---|---|---|
+| TypeScript / JavaScript | [`@alpha-sdk/client`](https://www.npmjs.com/package/@alpha-sdk/client) | npm | [TypeScript SDK](/alpha-sdk-api/sdk/typescript/) |
+| Python | [`alpha-sdk-client`](https://pypi.org/project/alpha-sdk-client/) | PyPI | [Python SDK](/alpha-sdk-api/sdk/python/) |
+| Swift | [`AlphaSDK`](https://github.com/jordlee/alpha-sdk-swift) | SwiftPM | [Swift SDK](/alpha-sdk-api/sdk/swift/) |
+
+## Example apps
+
+Reference apps that use the published SDKs and server package:
+
+- **Next.js / TypeScript:** [`alpha-sdk-typescript`](https://github.com/jordlee/alpha-sdk-typescript)
+- **Python notebook / data collection:** [`alpha-sdk-python`](https://github.com/jordlee/alpha-sdk-python)
+- **Swift SDK + macOS sample app:** [`alpha-sdk-swift`](https://github.com/jordlee/alpha-sdk-swift)
+
+:::note
+Every client targets the same REST server. To run that server locally, install [`@alpha-sdk/api`](/alpha-sdk-api/web-api/server/) — it ships the native binary, the `camera-server` CLI, and (for Node.js applications) a `ServerManager` class for embedding the server lifecycle. Browser-only or mobile applications connect to a server running elsewhere on the network.
+:::
+
+
+---
+
+## Quick orientation
+
+Every language client follows the same shape:
+
+```
+client
+  ├── server          health, status, logs
+  ├── cameras         list, connect, disconnect, getConnectionStatus
+  ├── properties      get, set, getAll, getPriorityKey, setPriorityKey
+  ├── actions         shutter, halfPress, afShutter, zoom, focusNearFar, movieRec
+  ├── liveView        enable, disable, getStatus, start, stop, getFrame
+  ├── sdCard          list, download, downloadThumbnail, downloadScreennail
+  └── settings        download, upload, list, importLut
+```
+
+The following are intentionally outside the generated client surface — see [recipes](#recipes) for the recommended patterns:
+
+- **Server-Sent Events** — consume with native `EventSource` (browser), `URLSession.bytes(for:)` (Swift), or `httpx.stream` (Python).
+- **Discovery, reconnect, and lifecycle helpers** — copy the recipe that fits your application.
+
+---
+
+## Pick your path
+
+<CardGrid>
+<LinkCard title="TypeScript" href="/alpha-sdk-api/sdk/typescript/" description="`npm install @alpha-sdk/client` — Node, Electron, Tauri, browsers." />
+  <LinkCard title="Python" href="/alpha-sdk-api/sdk/python/" description="`pip install alpha-sdk-client` — sync + async clients, Pydantic models." />
+  <LinkCard title="Swift" href="/alpha-sdk-api/sdk/swift/" description="SwiftPM — iOS 15+, macOS 12+, native async/await." />
+</CardGrid>
+
+
+<LinkCard title="Need to run the server?" href="/alpha-sdk-api/web-api/server/" description="`@alpha-sdk/api` — installs the REST API server, the `camera-server` CLI, and a Node.js `ServerManager` class." />
+
+---
+
+## Recipes
+
+Patterns that live outside the generated SDK surface. Copy and adapt — every recipe shows TypeScript, Python, and Swift side-by-side.
+
+<CardGrid>
+<LinkCard title="SSE event consumer" href="/alpha-sdk-api/sdk/recipes/sse-events/" description="React in real time to `propertyChanged`, `downloadComplete`, `transferProgress`, etc." />
+  <LinkCard title="Live-view JPEG polling" href="/alpha-sdk-api/sdk/recipes/live-view-polling/" description="Pull a frame every ~66ms and render it." />
+  <LinkCard title="Server subprocess" href="/alpha-sdk-api/sdk/recipes/server-subprocess/" description="Spawn the native server from Python or any non-Node runtime." />
+  <LinkCard title="Discovery + reconnect" href="/alpha-sdk-api/sdk/recipes/discovery-reconnect/" description="Poll `/api/cameras`, track which is connected, hot-plug handling." />
+  <LinkCard title="Retry + backoff" href="/alpha-sdk-api/sdk/recipes/retry-backoff/" description="Hand-roll exponential backoff for flaky connect / SD card calls." />
+  <LinkCard title="React hook" href="/alpha-sdk-api/sdk/recipes/react-hook/" description="`useCamera()` — bind one camera's connection + property state." />
+</CardGrid>

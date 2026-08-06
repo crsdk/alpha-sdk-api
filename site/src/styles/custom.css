@@ -1,0 +1,131 @@
+/*
+ * Palette matched to the Scalar API reference, so moving between the guides and
+ * /api-reference does not feel like two different sites.
+ *
+ * The values are Scalar's own, read out of the running reference's computed CSS
+ * custom properties rather than eyeballed:
+ *
+ *   --scalar-background-1  #0f0f0f   page
+ *   --scalar-background-2  #1a1a1a   cards, code, tables
+ *   --scalar-background-3  #272727   raised / hover
+ *   --scalar-border-color  #2d2d2d
+ *   --scalar-color-1       #e7e7e7   headings
+ *   --scalar-color-2       #a4a4a4   secondary text
+ *   --scalar-color-3       #797979   muted
+ */
+
+/* Starlight scopes its own dark values under :root[data-theme='dark'], which
+   outranks a bare :root block regardless of load order. Matching that selector
+   (and loading after, via customCss) is what makes these win. */
+:root,
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #10293b;
+  --sl-color-accent: #2b7fb8;
+  --sl-color-accent-high: #9ed3f2;
+
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #e7e7e7;
+  --sl-color-gray-2: #b9b9b9;
+  --sl-color-gray-3: #a4a4a4;
+  --sl-color-gray-4: #797979;
+  --sl-color-gray-5: #2d2d2d;
+  --sl-color-gray-6: #1a1a1a;
+  --sl-color-black: #0f0f0f;
+
+  --sl-color-bg: #0f0f0f;
+  --sl-color-bg-nav: #0f0f0f;
+  --sl-color-bg-sidebar: #0f0f0f;
+  --sl-color-bg-inline-code: #1a1a1a;
+  --sl-color-hairline: #2d2d2d;
+  --sl-color-hairline-light: #2d2d2d;
+  --sl-color-hairline-shade: #1a1a1a;
+
+  --sl-color-text: #b9b9b9;
+  --sl-color-text-accent: #4eb3ec;
+  --sl-color-text-invert: #0f0f0f;
+
+  --sl-color-code-bg: #1a1a1a;
+
+  /* Scalar reads denser than Starlight's defaults. */
+  --sl-text-h1: 1.875rem;
+  --sl-text-h2: 1.375rem;
+  --sl-text-h3: 1.125rem;
+  --sl-line-height: 1.7;
+
+  --sl-font: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, sans-serif;
+  --sl-font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas,
+    monospace;
+}
+
+/* The light scheme is deliberately kept close to Scalar's light surfaces
+   rather than left at Starlight's defaults, so the toggle stays coherent. */
+:root[data-theme='light'] {
+  --sl-color-bg: #ffffff;
+  --sl-color-bg-nav: #ffffff;
+  --sl-color-bg-sidebar: #fbfbfb;
+  --sl-color-bg-inline-code: #f6f6f6;
+  --sl-color-code-bg: #f6f6f6;
+  --sl-color-hairline: #dfdfdf;
+  --sl-color-hairline-light: #e7e7e7;
+  --sl-color-text: #3a3a3a;
+  --sl-color-text-accent: #0b5cff;
+  --sl-color-gray-5: #dfdfdf;
+  --sl-color-gray-6: #f6f6f6;
+}
+
+/* HTTP verb accents, using Scalar's method colours so a GET reads the same in
+   the guides as it does in the reference. Applied by the small script in
+   src/components/VerbAccents.astro. */
+:root,
+:root[data-theme='light'] {
+  --verb-get: #4eb3ec;
+  --verb-post: #3ecf8e;
+  --verb-put: #ff8d4d;
+  --verb-patch: #edbe20;
+  --verb-delete: #f0616d;
+}
+
+.sl-markdown-content code.verb {
+  background: transparent;
+  padding-inline: 0;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.sl-markdown-content code.verb-get { color: var(--verb-get); }
+.sl-markdown-content code.verb-post { color: var(--verb-post); }
+.sl-markdown-content code.verb-put { color: var(--verb-put); }
+.sl-markdown-content code.verb-patch { color: var(--verb-patch); }
+.sl-markdown-content code.verb-delete { color: var(--verb-delete); }
+
+/* Asides on a neutral surface with a coloured edge, rather than Starlight's
+   saturated tinted blocks. Scalar carries meaning on the border and the title
+   and keeps the fill neutral; a page with 13 asides is unreadable otherwise. */
+.starlight-aside {
+  background-color: var(--sl-color-gray-6);
+  border-inline-start-width: 2px;
+  border-inline-start-color: var(--aside-accent);
+  border-radius: 0 6px 6px 0;
+  color: var(--sl-color-text);
+}
+.starlight-aside--note { --aside-accent: #4eb3ec; }
+.starlight-aside--tip { --aside-accent: #3ecf8e; }
+.starlight-aside--caution { --aside-accent: #edbe20; }
+.starlight-aside--danger { --aside-accent: #f0616d; }
+
+.starlight-aside__title {
+  color: var(--aside-accent);
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+}
+
+.starlight-aside__content a {
+  color: var(--aside-accent);
+}
+
+/* Wide API tables scroll within themselves rather than pushing the page. */
+.sl-markdown-content table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}

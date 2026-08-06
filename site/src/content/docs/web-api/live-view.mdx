@@ -1,0 +1,95 @@
+---
+title: "Live View & OSD"
+description: "Live view streaming with optional camera UI overlay"
+---
+
+import { Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+
+Per-camera live view with optional OSD (On-Screen Display) overlay. All endpoints are scoped to a specific camera.
+
+See the auto-generated [API reference](/alpha-sdk-api/web-api/overview/) for full request/response schemas.
+
+## Workflow
+
+<Steps>
+
+1. **Enable or start live view**
+
+   `POST /api/cameras/{id}/live-view/enable` or `POST /api/cameras/{id}/live-view/start`
+
+1. **Get frames**
+
+   `GET /api/cameras/{id}/live-view/frame` returns a single JPEG frame
+
+1. **Optional: enable OSD**
+
+   `POST /api/cameras/{id}/live-view/osd-enable`
+
+1. **Get OSD frames**
+
+   `GET /api/cameras/{id}/live-view/osd-frame`
+
+1. **Stop live view**
+
+   `POST /api/cameras/{id}/live-view/stop`
+
+</Steps>
+
+
+---
+
+## Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/cameras/{id}/live-view/enable` | Send SDK `Setting_Key_EnableLiveView` |
+| `POST` | `/api/cameras/{id}/live-view/disable` | Disable live view |
+| `GET` | `/api/cameras/{id}/live-view/status` | Returns `enabled` + `streaming` booleans |
+| `POST` | `/api/cameras/{id}/live-view/start` | Start the frame capture worker (auto-enables live view) |
+| `POST` | `/api/cameras/{id}/live-view/stop` | Stop the frame capture worker |
+| `GET` | `/api/cameras/{id}/live-view/frame` | Latest JPEG frame (`Content-Type: image/jpeg`) |
+| `POST` | `/api/cameras/{id}/live-view/osd-enable` | Enable OSD overlay |
+| `POST` | `/api/cameras/{id}/live-view/osd-disable` | Disable OSD overlay |
+| `GET` | `/api/cameras/{id}/live-view/osd-status` | Returns `supported` + `enabled` |
+| `GET` | `/api/cameras/{id}/live-view/osd-frame` | Composited JPEG (live view + OSD) |
+
+:::caution
+Live view is disabled by default in `remote-transfer` mode. You must call `/live-view/enable` (or `/live-view/start` which auto-enables) before requesting frames.
+:::
+
+
+### Get Frame
+
+Returns the latest live view frame as a JPEG image. Streaming must be started first.
+
+<Tabs>
+<TabItem label="curl">
+
+```bash
+curl -o frame.jpg http://localhost:8080/api/cameras/D10F60149B0C/live-view/frame
+```
+
+</TabItem>
+</Tabs>
+
+
+### OSD Overlay
+
+Enable on-screen display — the camera renders its UI (exposure info, focus points, histogram, etc.) as an overlay image composited onto the live view frame.
+
+```bash
+curl -o osd-frame.jpg http://localhost:8080/api/cameras/D10F60149B0C/live-view/osd-frame
+```
+
+:::note
+Two things build on live view. Focus overlays are drawn from [AF Frame Position](/alpha-sdk-api/web-api/actions/#af-frame-position) and [Remote Touch and Tracking](/alpha-sdk-api/web-api/actions/#remote-touch-and-tracking), which report frame coordinates normalized to whatever size you render at. And the OSD frame paired with [Button Press](/alpha-sdk-api/web-api/actions/#button-press) is enough to drive the camera's own menus remotely — press, then read the screen back.
+:::
+
+
+---
+
+## Polling for continuous frames
+
+For a render loop at ~15 fps, poll `GET /api/cameras/{id}/live-view/frame` at roughly 66 ms intervals. The endpoint returns the latest JPEG the server has captured — the camera-side frame rate is the actual cap.
+
+See [the live-view polling example](/alpha-sdk-api/sdk/recipes/live-view-polling/) for full client implementations in TypeScript, Python, and Swift.

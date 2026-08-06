@@ -1,0 +1,37 @@
+---
+// Colours inline code spans that are exactly an HTTP verb, matching the method
+// colours Scalar uses in the reference, so a GET reads the same in the guides
+// as it does at /api-reference.
+//
+// CSS cannot match on text content, and baking markup into the 40 ported pages
+// would have to be redone on every re-port — so it is tagged at runtime.
+// Decorative only: with JS off the verbs render as ordinary inline code.
+---
+
+<script is:inline>
+  (function () {
+    var VERBS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+    var tag = function () {
+      document.querySelectorAll('.sl-markdown-content code').forEach(function (el) {
+        if (el.closest('pre') || el.classList.contains('verb')) return;
+        var text = (el.textContent || '').trim();
+        var verb = text.split(/\s+/)[0];
+        if (VERBS.indexOf(verb) === -1) return;
+        // A bare verb, or a verb followed by a path — not prose that merely
+        // happens to begin with one.
+        var rest = text.slice(verb.length).trim();
+        if (text !== verb && !/^\/|^https?:/.test(rest)) return;
+        el.classList.add('verb', 'verb-' + verb.toLowerCase());
+      });
+    };
+    // This script is injected into <head>, so the body does not exist yet on
+    // first parse — running immediately would find nothing to tag.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', tag);
+    } else {
+      tag();
+    }
+    // Re-tag after client-side navigation, when view transitions are enabled.
+    document.addEventListener('astro:page-load', tag);
+  })();
+</script>

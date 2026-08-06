@@ -1,0 +1,9 @@
+---
+// Wraps Starlight's own Head so the default metadata, canonical URLs and
+// favicon handling are all preserved — this only appends to it.
+import Default from '@astrojs/starlight/components/Head.astro';
+import VerbAccents from './VerbAccents.astro';
+---
+
+<Default><slot /></Default>
+<VerbAccents />

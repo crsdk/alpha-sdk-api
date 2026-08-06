@@ -50,25 +50,30 @@ jobs:
 
       # The spec is copied in rather than committed under site/, so there is
       # exactly one copy in the repo — the one beside the server that
-      # implements it. Runs before the build so Jekyll picks it up as a static
-      # file.
+      # implements it. Runs before the build so it is picked up as a static
+      # asset from public/.
       - name: Stage the OpenAPI spec into the site
-        run: cp api/openapi.yaml site/api-reference/openapi.yaml
+        run: cp api/openapi.yaml site/public/api-reference/openapi.yaml
 
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/setup-node@v4
         with:
-          ruby-version: '3.4'
-          bundler-cache: true            # installs from Gemfile.lock and caches
-          working-directory: site
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: site/package-lock.json
 
-      # Built with the pinned just-the-docs gem rather than `remote_theme:`, so
-      # the deploy does not fetch a theme over the network — the same reasoning
-      # that made us vendor the Scalar bundle.
-      - name: Build with Jekyll
+      # `npm ci` installs exactly the lockfile, so the published site cannot
+      # change because a transitive dependency shipped a new version — the
+      # build has no maintainer watching it.
+      - name: Install dependencies
         working-directory: site
-        env:
-          JEKYLL_ENV: production
-        run: bundle exec jekyll build --destination "$GITHUB_WORKSPACE/_site"
+        run: npm ci
+
+      - name: Build with Astro Starlight
+        working-directory: site
+        run: npm run build
+
+      - name: Collect build output
+        run: mv site/dist _site
 
       - name: Assert the vendored bundle is present and unmodified
         run: |
@@ -84,16 +89,41 @@ jobs:
       # deliberately not matched; a link is not a runtime dependency.
       - name: Assert no third-party runtime dependencies in page HTML
         run: |
-          set -euo pipefail
-          hits=$(grep -rnoE '<(script|img|iframe)[^>]+src="https?://[^"]+|<link[^>]+href="https?://[^"]+' \
-            _site --include='*.html' || true)
-          if [ -n "$hits" ]; then
-            echo "::error::Site HTML must not load resources from external hosts."
-            echo "$hits"
-            echo "Vendor the asset under site/assets/ instead. See site/assets/scalar/VENDORED.md."
-            exit 1
-          fi
-          echo "OK: no external runtime resource loads."
+          python3 - <<'PY'
+          import re, sys, pathlib
+
+          # Only RESOURCE LOADS count. Deliberately not flagged:
+          #   <a href>            a link is not a runtime dependency
+          #   <link rel=canonical|alternate|sitemap>
+          #                       self-referential metadata Starlight emits on
+          #                       every page; it fetches nothing
+          TAG = re.compile(r'<(script|img|iframe|link)\b([^>]*)>', re.I)
+          ATTR = lambda a, n: (re.search(rf'{n}\s*=\s*"([^"]*)"', a, re.I) or [None, ''])[1]
+          METADATA_REL = {'canonical', 'alternate', 'sitemap', 'me', 'manifest'}
+
+          bad = []
+          for f in pathlib.Path('_site').rglob('*.html'):
+              html = f.read_text(encoding='utf-8', errors='replace')
+              for m in TAG.finditer(html):
+                  tag, attrs = m.group(1).lower(), m.group(2)
+                  if tag == 'link':
+                      rel = ATTR(attrs, 'rel').lower().strip()
+                      if not rel or rel in METADATA_REL:
+                          continue
+                      url = ATTR(attrs, 'href')
+                  else:
+                      url = ATTR(attrs, 'src')
+                  if url.startswith(('http://', 'https://')):
+                      bad.append(f'{f}: <{tag}> -> {url}')
+
+          if bad:
+              print('::error::Site HTML must not load resources from external hosts.')
+              print('\n'.join(sorted(set(bad))[:20]))
+              print('Vendor the asset under site/public/assets/ instead.')
+              print('See site/public/assets/scalar/VENDORED.md.')
+              sys.exit(1)
+          print('OK: no external runtime resource loads.')
+          PY
 
       - uses: actions/upload-pages-artifact@v3
         with:
