@@ -100,3 +100,6 @@ changelog.txt
 # release and belongs only in the private npm-publishing copy of the repo, not
 # in the public open-source repo. Kept out of the public repo via gitignore.
 .github/workflows/build-binaries.yml
+
+# Generated docs site (assembled by .github/workflows/pages.yml)
+_site/

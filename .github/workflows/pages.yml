@@ -1,0 +1,108 @@
+name: Docs site
+
+# Publishes the API reference and request console to GitHub Pages.
+#
+# The site is static files only. It has no backend and never talks to a camera:
+# the request console runs in the reader's browser and calls the server on their
+# own machine at http://localhost:8080. See site/api-reference/index.html.
+#
+# The published spec is NOT a second copy. api/openapi.yaml — the one that lives
+# beside the server that implements it — is copied into the site at build time.
+# Do not add a checked-in duplicate under site/; a synced pair is the exact
+# failure this layout exists to prevent.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'api/openapi.yaml'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    paths:
+      - 'site/**'
+      - 'api/openapi.yaml'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # Runs on pull requests too, so a spec that would render a broken reference is
+  # caught before merge rather than after publish.
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A syntactically broken spec makes Scalar render an empty page with no
+      # visible error. Fail loudly here instead. Uses the repo's existing
+      # redocly.yaml, so this gate matches the rules the spec is already held to.
+      # Warnings do not fail the build; structural errors do.
+      - name: Validate OpenAPI spec
+        run: npx --yes @redocly/cli@2 lint api/openapi.yaml
+
+      - name: Assemble site
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp -R site/. _site/
+          # Single source of truth: the spec beside the server.
+          cp api/openapi.yaml _site/api-reference/openapi.yaml
+          # Pages runs Jekyll over the artifact unless told not to. Our filenames
+          # are plain, but .nojekyll removes the whole class of surprise (files
+          # and directories beginning with _ or . being silently dropped).
+          touch _site/.nojekyll
+
+      - name: Assert the vendored bundle is present and unmodified
+        run: |
+          set -euo pipefail
+          echo '25e0a1ef537dc7f1aa41dd8d22b94d8703dcfab34361f4d2ee84ac0600c8a457  _site/assets/scalar/standalone.js' \
+            | sha256sum -c -
+
+      # Catches the mistake the vendoring exists to prevent: someone pasting a
+      # CDN <script> back in during a future edit.
+      #
+      # Only resource loads count — <script src>, <link href>, <img src>,
+      # <iframe src>. Ordinary <a href> links to github.com are fine and are
+      # deliberately not matched; a link is not a runtime dependency.
+      - name: Assert no third-party runtime dependencies in page HTML
+        run: |
+          set -euo pipefail
+          hits=$(grep -rnoE '<(script|img|iframe)[^>]+src="https?://[^"]+|<link[^>]+href="https?://[^"]+' \
+            _site --include='*.html' || true)
+          if [ -n "$hits" ]; then
+            echo "::error::Site HTML must not load resources from external hosts."
+            echo "$hits"
+            echo "Vendor the asset under site/assets/ instead. See site/assets/scalar/VENDORED.md."
+            exit 1
+          fi
+          echo "OK: no external runtime resource loads."
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to Pages
+    # Only the public repo publishes. The private development repo shares this
+    # workflow file but has no Pages site, and enabling one there would publish
+    # a tree that deliberately tracks Sony SDK headers.
+    if: github.repository == 'jordlee/alpha-sdk-api' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
