@@ -79,7 +79,6 @@ export default defineConfig({
             { slug: 'mcp-server/troubleshooting' },
           ],
         },
-        { label: 'CLI', items: [{ slug: 'cli/camera-server' }] },
         {
           label: 'Changelog',
           items: [

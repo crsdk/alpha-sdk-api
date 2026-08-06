@@ -26,7 +26,7 @@ This recipe shows the same pattern as a reusable hook.
 
 ## When NOT to use
 
-- Scripts or CLIs — call the SDK client directly
+- Scripts or one-off tools — call the REST API directly
 - Non-React apps — use the discovery/SSE recipes directly
 
 ## Hook pattern

@@ -20,9 +20,14 @@ here, including changes that were never in the Mintlify source:
 - The `CameraWebAPI` MCP server was removed. It was served by Mintlify itself
   (`/_mintlify/mcp/...` at `crsdk.app/mcp`) and stops existing when that account
   is closed. The other two MCP servers are hosted separately and are unaffected.
-- The server is no longer distributed via npm, so `web-api/server.mdx` and
-  `cli/camera-server.md` describe the `CameraWebApp` binary and its real flags
-  (`--port` / `-p` only) rather than a `camera-server` CLI wrapper.
+- npm and PyPI distribution is fully retired, including the `camera-server`
+  CLI. The CLI section was removed entirely; `web-api/server.mdx` describes the
+  `CameraWebApp` binary and its real flags (`--port` / `-p` only — checked
+  against `api/server/src/CameraWebApp.cpp`, there is no `--version` and there
+  are no subcommands).
+- The docs are HTTP-only by design. The integration surface is the REST API:
+  call it directly, or generate a client from `api/openapi.yaml`. Do not
+  reintroduce language packages or CLI wrappers as documented install paths.
 - Links point at the `crsdk` organisation, not the personal account the repo
   used to live under.
 

@@ -6,7 +6,7 @@ description: "Implement programmatic camera-control for Sony's Alpha cameras usi
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 :::note
-The **Alpha Camera REST API**, **client SDKs**, **CLI tools**, and **MCP servers** are community-built developer tools. Sony's official native SDKs are available separately and are only needed for direct C\+\+ / C# integrations.
+The **Alpha Camera REST API** and the **MCP servers** are community-built developer tools. Sony's official native SDKs are available separately and are only needed for direct C\+\+ / C# integrations.
 :::
 
 
@@ -38,7 +38,7 @@ The Sony Developer Platform (unofficial) gives you developer friendly abstractio
 
 ## How it fits together
 
-The **Alpha Camera REST API** is the main integration surface for this site. It runs as a local HTTP and SSE server, packaged via npm with a CLI (`camera-server`) and a Node.js `ServerManager` class. The three **language client SDKs** — TypeScript, Python, and Swift — communicate with the server over RESTful API calls. The **MCP Servers** let AI assistants reference these layers while you build.
+The **Alpha Camera REST API** is the main integration surface for this site. It runs as a local HTTP and SSE server on the machine the camera is attached to, and everything talks to it over plain HTTP — from `curl`, from a client you [generate from the specification](/alpha-sdk-api/sdk/overview/), or from anything else that can make requests. The **MCP Servers** let AI assistants reference these layers while you build.
 
 If you need direct native integration instead of the REST stack, Sony also provides:
 
