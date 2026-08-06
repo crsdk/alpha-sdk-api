@@ -1,120 +1,159 @@
 /*
- * Palette matched to the Scalar API reference, so moving between the guides and
- * /api-reference does not feel like two different sites.
+ * Theme matched to the Scalar API reference.
  *
- * The values are Scalar's own, read out of the running reference's computed CSS
- * custom properties rather than eyeballed:
+ * Every value below was READ OUT OF THE RUNNING REFERENCE, not eyeballed:
+ * Scalar exposes its whole design system as ~94 `--scalar-*` custom properties,
+ * so both palettes were dumped from `getComputedStyle` on the live page (light
+ * and dark), and the display-p3 accents were resolved to sRGB through a canvas.
+ * Regenerate the same way if Scalar's theme ever moves.
  *
- *   --scalar-background-1  #0f0f0f   page
- *   --scalar-background-2  #1a1a1a   cards, code, tables
- *   --scalar-background-3  #272727   raised / hover
- *   --scalar-border-color  #2d2d2d
- *   --scalar-color-1       #e7e7e7   headings
- *   --scalar-color-2       #a4a4a4   secondary text
- *   --scalar-color-3       #797979   muted
+ *   Scalar (dark)                     Scalar (light)
+ *   --scalar-background-1  #0f0f0f    #ffffff    page
+ *   --scalar-background-2  #1a1a1a    #f6f6f6    surfaces, code, tables
+ *   --scalar-background-3  #272727    #e7e7e7    raised / hover
+ *   --scalar-border-color  #2d2d2d    #dfdfdf
+ *   --scalar-color-1       #e7e7e7    #1b1b1b    headings
+ *   --scalar-color-2       #a4a4a4    #757575    body text
+ *   --scalar-color-3       #797979    #8e8e8e    muted
+ *   --scalar-color-accent  #00aeff    #009cff
+ *
+ * Starlight's grey ramp is SEMANTIC and inverts between themes: gray-1 is
+ * whatever contrasts most with the background, gray-6 whatever sits closest to
+ * it, and white/black swap meaning. Both themes therefore define the full ramp
+ * — overriding only a few variables leaves the other theme's values in place
+ * for everything else.
  */
 
-/* Starlight scopes its own dark values under :root[data-theme='dark'], which
-   outranks a bare :root block regardless of load order. Matching that selector
-   (and loading after, via customCss) is what makes these win. */
+/* ---------------------------------------------------------------- dark ---- */
 :root,
 :root[data-theme='dark'] {
-  --sl-color-accent-low: #10293b;
-  --sl-color-accent: #2b7fb8;
-  --sl-color-accent-high: #9ed3f2;
+  --sl-color-accent-low: #06283a;
+  --sl-color-accent: #00aeff;
+  --sl-color-accent-high: #9ad8f8;
 
-  --sl-color-white: #ffffff;
+  --sl-color-white: #e7e7e7; /* --scalar-color-1 */
   --sl-color-gray-1: #e7e7e7;
-  --sl-color-gray-2: #b9b9b9;
-  --sl-color-gray-3: #a4a4a4;
-  --sl-color-gray-4: #797979;
-  --sl-color-gray-5: #2d2d2d;
-  --sl-color-gray-6: #1a1a1a;
-  --sl-color-black: #0f0f0f;
+  --sl-color-gray-2: #a4a4a4; /* --scalar-color-2 */
+  --sl-color-gray-3: #797979; /* --scalar-color-3 */
+  --sl-color-gray-4: #4a4a4a;
+  --sl-color-gray-5: #2d2d2d; /* --scalar-border-color */
+  --sl-color-gray-6: #1a1a1a; /* --scalar-background-2 */
+  --sl-color-gray-7: #141414;
+  --sl-color-black: #0f0f0f; /* --scalar-background-1 */
 
   --sl-color-bg: #0f0f0f;
   --sl-color-bg-nav: #0f0f0f;
-  --sl-color-bg-sidebar: #0f0f0f;
+  --sl-color-bg-sidebar: #0f0f0f; /* --scalar-sidebar-background-1 */
   --sl-color-bg-inline-code: #1a1a1a;
+  --sl-color-code-bg: #1a1a1a;
+
   --sl-color-hairline: #2d2d2d;
   --sl-color-hairline-light: #2d2d2d;
   --sl-color-hairline-shade: #1a1a1a;
 
-  --sl-color-text: #b9b9b9;
-  --sl-color-text-accent: #4eb3ec;
+  --sl-color-text: #a4a4a4;
+  --sl-color-text-accent: #00aeff;
   --sl-color-text-invert: #0f0f0f;
 
-  --sl-color-code-bg: #1a1a1a;
+  --scalar-surface-raised: #272727; /* --scalar-background-3 */
+  --scalar-shadow-1: 0 1px 3px 0 #0000001a;
 
-  /* Scalar reads denser than Starlight's defaults. */
-  --sl-text-h1: 1.875rem;
-  --sl-text-h2: 1.375rem;
-  --sl-text-h3: 1.125rem;
-  --sl-line-height: 1.7;
-
-  --sl-font: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    Roboto, sans-serif;
-  --sl-font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas,
-    monospace;
+  /* Verb accents, from Scalar's own method colours. */
+  --verb-get: #00b6f2;
+  --verb-post: #00b934;
+  --verb-put: #ff8539;
+  --verb-patch: #ffc600;
+  --verb-delete: #f00000;
 }
 
-/* Light scheme.
- *
- * Starlight's gray ramp is SEMANTIC, not a fixed lightness scale: gray-1 is
- * whatever contrasts most with the background and gray-6 whatever sits closest
- * to it, and `white`/`black` swap meaning between themes. So the light theme
- * needs the WHOLE ramp inverted, not a handful of overrides — setting only
- * `--sl-color-bg` and `--sl-color-text` leaves the dark ramp in place for
- * everything else, which renders the sidebar white-on-white.
- */
+/* --------------------------------------------------------------- light ---- */
 :root[data-theme='light'],
 [data-theme='light'] ::backdrop {
-  --sl-color-accent-low: #d8e8f5;
-  --sl-color-accent: #0b5cff;
-  --sl-color-accent-high: #0a3f8f;
+  --sl-color-accent-low: #d6ecfb;
+  --sl-color-accent: #009cff;
+  --sl-color-accent-high: #005b96;
 
-  /* Inverted ramp: most-contrasting first. */
-  --sl-color-white: #14161a;
+  --sl-color-white: #1b1b1b; /* --scalar-color-1 */
   --sl-color-gray-1: #1b1b1b;
-  --sl-color-gray-2: #3a3a3a;
-  --sl-color-gray-3: #757575;
-  --sl-color-gray-4: #8e8e8e;
-  --sl-color-gray-5: #dfdfdf;
-  --sl-color-gray-6: #f6f6f6;
+  --sl-color-gray-2: #4a4a4a;
+  --sl-color-gray-3: #757575; /* --scalar-color-2 */
+  --sl-color-gray-4: #8e8e8e; /* --scalar-color-3 */
+  --sl-color-gray-5: #dfdfdf; /* --scalar-border-color */
+  --sl-color-gray-6: #f6f6f6; /* --scalar-background-2 */
   --sl-color-gray-7: #fbfbfb;
-  --sl-color-black: #ffffff;
+  --sl-color-black: #ffffff; /* --scalar-background-1 */
 
   --sl-color-bg: #ffffff;
   --sl-color-bg-nav: #ffffff;
-  --sl-color-bg-sidebar: #fbfbfb;
-  --sl-color-bg-inline-code: #f0f0f0;
+  --sl-color-bg-sidebar: #ffffff; /* Scalar's light sidebar is the page colour */
+  --sl-color-bg-inline-code: #f6f6f6;
   --sl-color-code-bg: #f6f6f6;
 
   --sl-color-hairline: #dfdfdf;
   --sl-color-hairline-light: #e7e7e7;
   --sl-color-hairline-shade: #f0f0f0;
 
-  --sl-color-text: #3a3a3a;
-  --sl-color-text-accent: #0b5cff;
+  /* Scalar sets body text to #757575. That is 4.6:1 on white — it passes, but
+     only just, and these pages carry far more prose than an API reference. One
+     step darker keeps the character and buys real headroom. */
+  --sl-color-text: #4a4a4a;
+  /* Scalar's light accent (#009cff) is only 2.8:1 on white. Darkened until
+     links clear AA with real headroom rather than by a hair. */
+  --sl-color-text-accent: #0068ad;
   --sl-color-text-invert: #ffffff;
+
+  --scalar-surface-raised: #e7e7e7; /* --scalar-background-3 */
+  --scalar-shadow-1: 0 1px 3px 0 #0000001c;
+
+  --verb-get: #0085d6;
+  --verb-post: #00935d;
+  --verb-put: #ff5700;
+  --verb-patch: #f6bc00;
+  --verb-delete: #e00000;
 }
 
-/* HTTP verb accents, using Scalar's method colours so a GET reads the same in
-   the guides as it does in the reference. Applied by the small script in
-   src/components/VerbAccents.astro. */
-:root,
-:root[data-theme='light'] {
-  --verb-get: #4eb3ec;
-  --verb-post: #3ecf8e;
-  --verb-put: #ff8d4d;
-  --verb-patch: #edbe20;
-  --verb-delete: #f0616d;
+/* ---------------------------------------------------------- typography ---- */
+:root {
+  /* Scalar's exact stacks, including the fonts it names first. */
+  --sl-font: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  --sl-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, 'Liberation Mono', 'Courier New', monospace;
+
+  /* Scalar's heading ramp is 24 / 20 / 16 / 16 / 16px — nearly flat, which
+     suits an API reference of short uniform sections. These pages run long and
+     nest three levels deep, so h1 and h2 keep Scalar's sizes while h3 and below
+     stay just distinguishable rather than collapsing to body size. */
+  --sl-text-h1: 1.5rem; /* 24px, --scalar-heading-1 */
+  --sl-text-h2: 1.25rem; /* 20px, --scalar-heading-2 */
+  --sl-text-h3: 1.0625rem;
+  --sl-text-h4: 1rem; /* 16px, as Scalar */
+  --sl-text-h5: 0.9375rem;
+
+  --sl-line-height: 1.7;
 }
 
+/* Scalar draws hairlines at half a pixel and rounds corners at 3px. Both are
+   quietly distinctive and cheap to carry across. */
+.sl-markdown-content :is(table, th, td),
+.starlight-aside,
+.sl-markdown-content pre,
+.sl-markdown-content blockquote {
+  border-width: 0.5px;
+}
+
+.sl-markdown-content :is(pre, table),
+.starlight-aside {
+  border-radius: 3px;
+}
+
+/* -------------------------------------------------------- verb accents ---- */
+/* Applied by src/components/VerbAccents.astro — CSS cannot match text content,
+   and baking markup into the pages would have to be redone on every edit. */
 .sl-markdown-content code.verb {
   background: transparent;
   padding-inline: 0;
-  font-weight: 600;
+  font-weight: 600; /* --scalar-bold */
   letter-spacing: 0.02em;
 }
 .sl-markdown-content code.verb-get { color: var(--verb-get); }
@@ -123,24 +162,26 @@
 .sl-markdown-content code.verb-patch { color: var(--verb-patch); }
 .sl-markdown-content code.verb-delete { color: var(--verb-delete); }
 
-/* Asides on a neutral surface with a coloured edge, rather than Starlight's
-   saturated tinted blocks. Scalar carries meaning on the border and the title
-   and keeps the fill neutral; a page with 13 asides is unreadable otherwise. */
+/* ------------------------------------------------------------- asides ----- */
+/* Neutral fill with a coloured edge, as Scalar does it — meaning carried on the
+   border and the title rather than a saturated block. A page with 13 asides is
+   unreadable otherwise. */
 .starlight-aside {
   background-color: var(--sl-color-gray-6);
   border-inline-start-width: 2px;
   border-inline-start-color: var(--aside-accent);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 3px 3px 0;
   color: var(--sl-color-text);
 }
-.starlight-aside--note { --aside-accent: #4eb3ec; }
-.starlight-aside--tip { --aside-accent: #3ecf8e; }
-.starlight-aside--caution { --aside-accent: #edbe20; }
-.starlight-aside--danger { --aside-accent: #f0616d; }
+.starlight-aside--note { --aside-accent: var(--verb-get); }
+.starlight-aside--tip { --aside-accent: var(--verb-post); }
+.starlight-aside--caution { --aside-accent: var(--verb-patch); }
+.starlight-aside--danger { --aside-accent: var(--verb-delete); }
 
 .starlight-aside__title {
   color: var(--aside-accent);
   font-size: 0.8125rem;
+  font-weight: 600;
   letter-spacing: 0.02em;
 }
 
@@ -148,9 +189,18 @@
   color: var(--aside-accent);
 }
 
+/* -------------------------------------------------------------- misc ------ */
 /* Wide API tables scroll within themselves rather than pushing the page. */
 .sl-markdown-content table {
   display: block;
   overflow-x: auto;
   max-width: 100%;
+}
+
+/* Scalar marks the active sidebar row with a filled surface rather than an
+   accent block (--scalar-sidebar-item-active-background). */
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover {
+  background-color: var(--sl-color-gray-6);
+  color: var(--sl-color-white);
 }
