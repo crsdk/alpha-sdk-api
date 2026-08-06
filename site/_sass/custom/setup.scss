@@ -1,0 +1,28 @@
+// Typography, matched toward the Scalar reference.
+//
+// Loaded by the theme immediately after support/support, which declares these
+// with !default — so plain assignments here win, and everything downstream
+// (modules, callouts, custom.scss) sees these values.
+//
+// Scalar reads denser and quieter than stock just-the-docs: a smaller heading
+// ramp, more line-height in body copy, and a mono stack that prefers the
+// programming faces people actually have installed.
+
+$body-font-family: "Inter", system-ui, -apple-system, blinkmacsystemfont,
+  "Segoe UI", roboto, "Helvetica Neue", arial, sans-serif !important;
+
+$mono-font-family: ui-monospace, "SF Mono", "SFMono-Regular", "JetBrains Mono",
+  menlo, consolas, monospace;
+
+// Roomier body copy, tighter headings — the stock 1.4/1.25 pairing reads
+// cramped in prose and loose in headings, which is backwards for a docs site.
+$body-line-height: 1.5;
+$content-line-height: 1.7;
+$body-heading-line-height: 1.3;
+
+// A shallower heading ramp. Stock jumps h1 -> h2 by a full 0.875rem, which on
+// pages with many sections (properties.md has dozens) makes the page read as a
+// list of banners rather than a hierarchy.
+$font-size-6: 1.0625rem; // h2
+$font-size-7: 1.375rem;
+$font-size-8: 1.75rem; // h1

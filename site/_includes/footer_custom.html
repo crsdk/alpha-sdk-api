@@ -1,21 +1,148 @@
 <script>
-  // Tags inline code spans that are exactly an HTTP verb, so custom.scss can
-  // colour them the same way Scalar colours method badges. CSS has no way to
-  // match on text content, and rewriting 41 ported pages to carry markup for
-  // this would be worse — it would have to be redone on every re-port.
-  //
-  // Purely decorative: with JS off the verbs render as ordinary inline code.
+  // Progressive enhancement only. Every behaviour here is decorative: with JS
+  // off the page is still a complete, navigable document — verbs render as
+  // ordinary inline code, code blocks keep their own styling, and the sticky
+  // rail simply does not appear (the sidebar remains the means of navigation).
   (function () {
+    'use strict';
+
+    var content = document.querySelector('.main-content');
+    if (!content) return;
+
+    // -- HTTP verb accents --------------------------------------------------
+    // Colours inline code spans that are exactly a verb, matching the method
+    // colours Scalar uses in the reference. CSS cannot match on text content,
+    // and baking markup into the 41 ported pages would have to be redone on
+    // every re-port, so it is tagged here instead.
     var VERBS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
-    document.querySelectorAll('.main-content code').forEach(function (el) {
-      if (el.closest('pre')) return; // leave fenced code blocks alone
+    content.querySelectorAll('code').forEach(function (el) {
+      if (el.closest('pre')) return; // fenced blocks are left alone
       var text = (el.textContent || '').trim();
       var verb = text.split(/\s+/)[0];
       if (VERBS.indexOf(verb) === -1) return;
-      // Only a bare verb, or a verb followed by a path — not prose that merely
-      // happens to start with one.
-      if (text !== verb && !/^\/|^https?:/.test(text.slice(verb.length).trim())) return;
+      // A bare verb, or a verb followed by a path — not prose that merely
+      // happens to begin with one.
+      var rest = text.slice(verb.length).trim();
+      if (text !== verb && !/^\/|^https?:/.test(rest)) return;
       el.classList.add('verb', 'verb-' + verb.toLowerCase());
     });
+
+    // -- Code block header bars ---------------------------------------------
+    // Rouge wraps each block in <div class="language-bash highlighter-rouge">,
+    // which is where the language name comes from.
+    var LANG_LABEL = {
+      bash: 'shell', sh: 'shell', shell: 'shell', console: 'shell',
+      js: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
+      py: 'python', rb: 'ruby', yml: 'yaml', md: 'markdown',
+      json: 'json', http: 'http', swift: 'swift', cpp: 'c++', plaintext: 'text'
+    };
+
+    content.querySelectorAll('div.highlighter-rouge').forEach(function (block) {
+      var lang = '';
+      block.classList.forEach(function (c) {
+        if (c.indexOf('language-') === 0) lang = c.slice('language-'.length);
+      });
+      if (!lang || lang === 'nolang') return;
+
+      var header = document.createElement('div');
+      header.className = 'code-header';
+
+      var label = document.createElement('span');
+      label.textContent = LANG_LABEL[lang] || lang;
+      header.appendChild(label);
+
+      var copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'code-copy';
+      copy.textContent = 'copy';
+      copy.addEventListener('click', function () {
+        var code = block.querySelector('code');
+        if (!code) return;
+        var text = code.innerText;
+
+        var done = function (ok) {
+          copy.textContent = ok ? 'copied' : 'select and copy';
+          setTimeout(function () { copy.textContent = 'copy'; }, 1800);
+        };
+
+        // execCommand is deprecated but is the only path that works when the
+        // async clipboard API is unavailable or refuses (permissions policy,
+        // non-secure context). Silently doing nothing is the one outcome to
+        // avoid — the button would look broken with no explanation.
+        var fallback = function () {
+          try {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            var ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            done(ok);
+          } catch (e) {
+            done(false);
+          }
+        };
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () { done(true); }, fallback);
+        } else {
+          fallback();
+        }
+      });
+      header.appendChild(copy);
+
+      block.parentNode.insertBefore(header, block);
+    });
+
+    // -- Sticky "on this page" rail -----------------------------------------
+    // The nearest analogue to Scalar's third column. Built from the headings
+    // that already exist, so nothing in the content has to carry TOC markers.
+    var headings = [].slice
+      .call(content.querySelectorAll('h2[id], h3[id]'))
+      .filter(function (h) { return h.id && h.textContent.trim(); });
+
+    if (headings.length >= 3) {
+      var rail = document.createElement('nav');
+      rail.className = 'page-toc';
+      rail.setAttribute('aria-label', 'On this page');
+
+      var title = document.createElement('div');
+      title.className = 'page-toc-title';
+      title.textContent = 'On this page';
+      rail.appendChild(title);
+
+      var list = document.createElement('ul');
+      var links = headings.map(function (h) {
+        var li = document.createElement('li');
+        if (h.tagName === 'H3') li.className = 'page-toc-h3';
+        var a = document.createElement('a');
+        a.href = '#' + h.id;
+        // Strip just-the-docs' anchor-link glyph from the label.
+        a.textContent = (h.textContent || '').replace(/^\s*|\s*$/g, '');
+        li.appendChild(a);
+        list.appendChild(li);
+        return a;
+      });
+      rail.appendChild(list);
+      document.querySelector('.main').appendChild(rail);
+
+      // Scroll-spy: mark the heading nearest the top of the viewport.
+      var ticking = false;
+      var spy = function () {
+        var best = 0;
+        for (var i = 0; i < headings.length; i++) {
+          if (headings[i].getBoundingClientRect().top <= 120) best = i;
+        }
+        links.forEach(function (a, i) { a.classList.toggle('active', i === best); });
+        ticking = false;
+      };
+      window.addEventListener('scroll', function () {
+        if (!ticking) { ticking = true; window.requestAnimationFrame(spy); }
+      }, { passive: true });
+      spy();
+    }
   })();
 </script>
