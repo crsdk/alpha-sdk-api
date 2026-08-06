@@ -88,6 +88,24 @@ Data sourced from Camera Remote SDK V2.01.00 `api_list`.
 | [Settings Download](/alpha-sdk-api/web-api/settings/#download-settings-to-pc) | ✓ | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | [Settings Upload](/alpha-sdk-api/web-api/settings/#upload-settings-to-camera) | ✓ | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 
+
+### Capabilities discovered at runtime
+
+Some newer endpoints are deliberately absent from the table above, because
+support for them is **not a fixed per-model fact** and a ✓/— matrix would
+misrepresent them. The camera reports what it will accept, and the answer can
+change with the camera's current settings.
+
+| API | What determines support | How to find out |
+|---|---|---|
+| [Button press](/alpha-sdk-api/web-api/actions/#button-press) | The body's own key list, which is much shorter than the full enum. An ILCE-7M4 accepts 24 keys — the D-pad, `enter`, `menu`, `fn`, `playback`, `c1`–`c4`, `movie`, `ael`, `af-on` — but not `delete`, `mode`, `c5`–`c7`, `display`, `home` or `thumbnail`. | A rejected press returns `400` with the camera's supported list in `data.supported_buttons`. |
+| [AF frame position](/alpha-sdk-api/web-api/actions/#af-frame-position) | The current `focus-area`, not the model. Only areas that actually draw a box report one — Flexible Spot, Expand Flexible Spot and the Tracking variants. | `400` while the focus area draws no box. Read [`focus-area`](/alpha-sdk-api/web-api/properties/) to know which mode you are in. |
+| [Remote touch](/alpha-sdk-api/web-api/actions/#remote-touch-and-tracking) | Alpha bodies accept a touch, but cannot choose what it does — `FunctionOfRemoteTouchOperation` is unsupported on Alpha including the ILCE-7M4. Only broadcast bodies can select the function. | Attempt the touch; the response reports what happened. |
+
+Querying at runtime is the reliable approach for all three: the camera is the
+authority, and it answers in the error body rather than requiring a lookup
+table that would go stale as firmware changes.
+
 :::note
 **SD Card (C)** requires **Contents** mode. **SD Card (T)** and **Transfer Callback** require **Remote Transfer** mode. See the [Camera Connection Compatibility](#camera-connection-compatibility) table above for which modes each camera supports.
 :::

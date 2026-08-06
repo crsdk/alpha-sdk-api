@@ -38,6 +38,13 @@ export default defineConfig({
       // Mintlify's built-in search, which had no config to port.
       pagefind: true,
       sidebar: [
+        {
+          // Starlight prepends `base` to sidebar links — repeating it here
+          // produces /alpha-sdk-api/alpha-sdk-api/api-reference/.
+          label: 'API reference & request console',
+          link: '/api-reference/',
+          attrs: { target: '_self' },
+        },
         { label: 'Platform overview', slug: 'platform-overview' },
         {
           label: 'REST API',
@@ -80,6 +87,14 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Contributing',
+          items: [
+            { slug: 'contributing' },
+            { slug: 'contributing/adding-endpoints' },
+            { slug: 'contributing/agent-skills' },
+          ],
+        },
+        {
           label: 'Changelog',
           items: [
             { slug: 'changelog/05-04-2026' },
@@ -89,13 +104,6 @@ export default defineConfig({
             { slug: 'changelog/03-17-2026' },
             { slug: 'changelog/02-27-2026' },
           ],
-        },
-        {
-          // Starlight prepends `base` to sidebar links — repeating it here
-          // produces /alpha-sdk-api/alpha-sdk-api/api-reference/.
-          label: 'API reference & request console',
-          link: '/api-reference/',
-          attrs: { target: '_self' },
         },
       ],
     }),

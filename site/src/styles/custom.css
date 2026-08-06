@@ -58,20 +58,45 @@
     monospace;
 }
 
-/* The light scheme is deliberately kept close to Scalar's light surfaces
-   rather than left at Starlight's defaults, so the toggle stays coherent. */
-:root[data-theme='light'] {
+/* Light scheme.
+ *
+ * Starlight's gray ramp is SEMANTIC, not a fixed lightness scale: gray-1 is
+ * whatever contrasts most with the background and gray-6 whatever sits closest
+ * to it, and `white`/`black` swap meaning between themes. So the light theme
+ * needs the WHOLE ramp inverted, not a handful of overrides — setting only
+ * `--sl-color-bg` and `--sl-color-text` leaves the dark ramp in place for
+ * everything else, which renders the sidebar white-on-white.
+ */
+:root[data-theme='light'],
+[data-theme='light'] ::backdrop {
+  --sl-color-accent-low: #d8e8f5;
+  --sl-color-accent: #0b5cff;
+  --sl-color-accent-high: #0a3f8f;
+
+  /* Inverted ramp: most-contrasting first. */
+  --sl-color-white: #14161a;
+  --sl-color-gray-1: #1b1b1b;
+  --sl-color-gray-2: #3a3a3a;
+  --sl-color-gray-3: #757575;
+  --sl-color-gray-4: #8e8e8e;
+  --sl-color-gray-5: #dfdfdf;
+  --sl-color-gray-6: #f6f6f6;
+  --sl-color-gray-7: #fbfbfb;
+  --sl-color-black: #ffffff;
+
   --sl-color-bg: #ffffff;
   --sl-color-bg-nav: #ffffff;
   --sl-color-bg-sidebar: #fbfbfb;
-  --sl-color-bg-inline-code: #f6f6f6;
+  --sl-color-bg-inline-code: #f0f0f0;
   --sl-color-code-bg: #f6f6f6;
+
   --sl-color-hairline: #dfdfdf;
   --sl-color-hairline-light: #e7e7e7;
+  --sl-color-hairline-shade: #f0f0f0;
+
   --sl-color-text: #3a3a3a;
   --sl-color-text-accent: #0b5cff;
-  --sl-color-gray-5: #dfdfdf;
-  --sl-color-gray-6: #f6f6f6;
+  --sl-color-text-invert: #ffffff;
 }
 
 /* HTTP verb accents, using Scalar's method colours so a GET reads the same in
