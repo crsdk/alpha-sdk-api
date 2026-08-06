@@ -1,67 +1,56 @@
 ---
-title: "REST API CLI"
-description: "Start, stop, and inspect the Alpha Camera REST API server binary from the terminal."
+title: "CameraWebApp"
+description: "Running the camera server binary directly from a terminal"
 ---
 
-The `camera-server` CLI ships with the [`@alpha-sdk/api`](https://www.npmjs.com/package/@alpha-sdk/api) npm package. It wraps the native server binary so you can run the REST API without writing any application code — useful for local testing, debugging, and language-agnostic integrations.
+`CameraWebApp` is the server binary. Running it from a terminal is the simplest
+way to bring the REST API up — useful for local testing, debugging, and
+language-agnostic integrations where you just want the HTTP interface available.
 
-## Install
+It is built from source; see `api/distribution/INSTALL_MACOS.md` in the
+repository for build steps and prerequisites.
 
-```bash
-npm install -g @alpha-sdk/api
-```
-
-The post-install step downloads the platform-specific native binary (`darwin-arm64`, `linux-arm64`, `linux-x64`, `win32-x64`).
-
-## Commands
-
-### `camera-server start`
-
-Starts the server in the foreground on port `8080`.
+## Usage
 
 ```bash
-camera-server start
+CameraWebApp
 ```
 
-Options:
+Starts the server on `http://localhost:8080` and runs in the foreground, logging
+to stdout. Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd> — it traps `SIGINT` and
+`SIGTERM` and shuts down gracefully, disconnecting cameras and closing SSE
+streams first.
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--port <n>` | Port to bind | `8080` |
-| `--host <addr>` | Host to bind | `127.0.0.1` |
-| `--detach` | Run in the background (PID file + log file) | off |
+### Options
 
-Examples:
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--port`, `-p` | `8080` | Port to listen on. Must be 1–65535; anything outside that range exits with an error. |
 
 ```bash
-camera-server start --port 9000
-camera-server start --detach
+CameraWebApp --port 9000
 ```
 
-### `camera-server stop`
+Those are the only flags. There are no subcommands — the binary starts a server
+and runs until stopped.
 
-Stops a server started with `--detach`.
+## Checking it is up
 
 ```bash
-camera-server stop
+curl http://localhost:8080/api/server/status
 ```
 
-### `camera-server status`
+## Stopping it from elsewhere
 
-Reports whether a detached server is running, its PID, and its HTTP health.
+If something other than your terminal needs to stop the server, prefer the HTTP
+endpoint over a signal so cameras disconnect cleanly:
 
 ```bash
-camera-server status
+curl -X POST http://localhost:8080/api/server/shutdown
 ```
 
-Exit codes: `0` if running and healthy, `1` otherwise — suitable for shell scripts and health probes.
+## Running it under another process
 
-## Use cases
-
-- **Local development** — run the REST API without spinning up the TypeScript client.
-- **Language-agnostic workflows** — control the camera from Python, Go, Rust, or a shell script by calling the REST endpoints directly.
-- **Remote server setups** — run `camera-server start --host 0.0.0.0` on a host connected to the camera (e.g. a Raspberry Pi) and point other machines at it.
-
-## Programmatic equivalent
-
-The TypeScript SDK's [`ServerManager`](/alpha-sdk-api/web-api/server/) provides the same lifecycle control programmatically. Use the CLI for scripts and one-off tasks; use `ServerManager` when the server's lifecycle is tied to your application's.
+To start and supervise the server from an application — picking a free port,
+waiting for readiness, shutting it down on exit — see the
+[server subprocess recipe](/alpha-sdk-api/sdk/recipes/server-subprocess/).

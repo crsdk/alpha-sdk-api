@@ -57,7 +57,7 @@ Supported camera models and their connection mode support per physical layer. Co
 <sup>*2</sup> Use a USB Type-C wired LAN adaptor for wired Ethernet.
 
 :::note
-Connection mode details: **R** (Remote) = full camera control with auto-transfer, **C** (Contents) = SD card browsing only, **T** (Remote Transfer) = full control + explicit SD card download. See [Connection Modes](/alpha-sdk-api/sdk/typescript/#connection-modes).
+Connection mode details: **R** (Remote) = full camera control with auto-transfer, **C** (Contents) = SD card browsing only, **T** (Remote Transfer) = full control + explicit SD card download. See [Connection Modes](/alpha-sdk-api/web-api/overview/#connection-modes).
 :::
 
 

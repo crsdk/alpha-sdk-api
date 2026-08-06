@@ -46,7 +46,7 @@ curl http://localhost:8080/api/cameras
 
 ## Connect Camera
 
-`POST /api/cameras/{cameraId}/connection` — establish a connection in the specified [mode](/alpha-sdk-api/sdk/typescript/#connection-modes).
+`POST /api/cameras/{cameraId}/connection` — establish a connection in the specified [mode](/alpha-sdk-api/web-api/overview/#connection-modes).
 
 Body fields:
 
@@ -125,5 +125,5 @@ curl -X DELETE http://localhost:8080/api/cameras/D10F60149B0C/connection
 
 
 :::note
-For typed client calls, use the language SDK pages: [TypeScript](/alpha-sdk-api/sdk/typescript/), [Python](/alpha-sdk-api/sdk/python/), or [Swift](/alpha-sdk-api/sdk/swift/).
+For typed client calls, [generate a client](/alpha-sdk-api/sdk/overview/) from the OpenAPI specification.
 :::

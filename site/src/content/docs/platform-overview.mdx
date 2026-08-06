@@ -11,20 +11,16 @@ The Sony Developer Platform (unofficial) consists of the **Alpha Camera REST API
 
 | Layer | What it is | When to use it |
 | --- | --- | --- |
-| **Alpha Camera REST API** | A local HTTP and SSE server that wraps the native C\+\+ SDK. Distributed via npm (`@alpha-sdk/api`) with the `camera-server` CLI and a Node.js `ServerManager` class | Cross-platform apps; multi-client setups; embedding the server in a Node / Electron / Tauri app |
-| **Language client SDKs** | REST clients in TypeScript, Python, and Swift | Modern UI-centric app frameworks (React, SwiftUI) or headless server applications (Express.js, FastAPI) |
+| **Alpha Camera REST API** | A local HTTP and SSE server that wraps the native C\+\+ SDK. Built from source and run as the `CameraWebApp` binary | Cross-platform apps; multi-client setups; supervising the server from your own process |
+| **Generated clients** | Typed clients you generate from the OpenAPI specification, in whichever language you work in | Any application that would rather call typed methods than build URLs by hand |
 | **MCP Servers** | AI-assistant–consumable indexes of the SDK and Help Guide | Building with Claude, Cursor, or other AI assisted development tools |
 
 ## Picking a layer
 
 <CardGrid>
-<LinkCard title="I'm shipping a TypeScript / Node / Electron app" href="/alpha-sdk-api/sdk/typescript/" description="Install the [server package](/alpha-sdk-api/web-api/server/) (`@alpha-sdk/api`) and pair it with `@alpha-sdk/client`." />
+<LinkCard title="I want a typed client" href="/alpha-sdk-api/sdk/overview/" description="Generate one for your language directly from the OpenAPI specification." />
 
-  <LinkCard title="I'm shipping a Python app or Jupyter notebook" href="/alpha-sdk-api/sdk/python/" description="`pip install alpha-sdk-client` — sync \+ async clients with Pydantic models." />
-
-  <LinkCard title="I'm shipping an iOS or macOS app" href="/alpha-sdk-api/sdk/swift/" description="Add `AlphaSDK` via SwiftPM — native async/await, zero third-party deps." />
-
-  <LinkCard title="I'm using a language without an SDK" href="/alpha-sdk-api/web-api/overview/" description="Call the **Alpha Camera REST API** directly or generate an SDK yourself from the OpenAPI contract." />
+  <LinkCard title="I just want to call HTTP" href="/alpha-sdk-api/web-api/overview/" description="Call the REST API directly from any language or tool that speaks HTTP." />
 
   <LinkCard title="I'm building with AI assistants" href="/alpha-sdk-api/mcp-server/overview/" description="Configure the **MCP Servers** with your coding agent for SDK-accurate code and spec lookups." />
 </CardGrid>

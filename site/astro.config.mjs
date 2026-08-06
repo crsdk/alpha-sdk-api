@@ -56,13 +56,8 @@ export default defineConfig({
           ],
         },
         {
-          label: 'SDK Reference',
-          items: [
-            { slug: 'sdk/overview' },
-            { slug: 'sdk/typescript' },
-            { slug: 'sdk/python' },
-            { slug: 'sdk/swift' },
-          ],
+          label: 'Clients',
+          items: [{ slug: 'sdk/overview' }],
         },
         {
           label: 'Examples',

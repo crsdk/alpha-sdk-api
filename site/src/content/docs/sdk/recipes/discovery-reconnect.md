@@ -3,6 +3,13 @@ title: "Discovery + reconnect"
 description: "Track connected cameras across plug/unplug cycles"
 ---
 
+:::note
+`CameraClient` below is whatever client you
+[generated from the specification](/alpha-sdk-api/sdk/overview/) — the pattern
+is identical if you call the REST API with `fetch`, `httpx` or `URLSession`
+directly. Only the call sites change.
+:::
+
 Poll `GET /api/cameras` to detect USB hot-plug events, auto-connect new cameras, and reconnect if one drops. The Alpha Camera REST server enumerates cameras every time you call `/api/cameras`, so regular polling is the idiomatic way to track physical state.
 
 ## When to use
@@ -103,7 +110,7 @@ OnError = Callable[[BaseException], Awaitable[None]]
 
 
 async def watch_cameras(
-    client,  # AsyncAlphaSDKClient
+    client,  # your generated client
     *,
     interval_s: float = 3.0,
     on_appear: Optional[OnAppear] = None,
@@ -162,11 +169,11 @@ async def watch_cameras(
 
 ```python
 import asyncio
-from alpha_sdk_client import AsyncAlphaSDKClient
+from camera_client import CameraClient  # your generated client
 from discovery import watch_cameras, CameraInfo
 
 async def main():
-    client = AsyncAlphaSDKClient(base_url="http://localhost:8080")
+    client = CameraClient(base_url="http://localhost:8080")
 
     async def on_appear(cam: CameraInfo):
         print(f"Camera appeared: {cam.model} ({cam.id})")
@@ -205,14 +212,13 @@ asyncio.run(main())
 // DiscoveryController.swift — mirrors the real app's poll + SSE hybrid.
 
 import Foundation
-import AlphaSDK
 
 @MainActor
 final class DiscoveryController: ObservableObject {
     @Published private(set) var cameras: [CameraInfo] = []
     @Published private(set) var connectedCameraId: String?
 
-    private let client: AlphaSDKClient
+    private let client: CameraClient
     private let baseURL: String
 
     private var discoveryTask: Task<Void, Never>?
@@ -231,7 +237,7 @@ final class DiscoveryController: ObservableObject {
     // long-running transfer work.
     var shouldSkipDiscoveryTick = false
 
-    init(client: AlphaSDKClient, baseURL: String) {
+    init(client: CameraClient, baseURL: String) {
         self.client = client
         self.baseURL = baseURL
     }
@@ -394,7 +400,7 @@ final class DiscoveryController: ObservableObject {
 ### Usage
 
 ```swift
-let client = AlphaSDKClient(baseURL: "http://localhost:8080", timeout: 60)
+let client = CameraClient(baseURL: "http://localhost:8080", timeout: 60)
 let controller = DiscoveryController(client: client, baseURL: "http://localhost:8080")
 controller.start()
 

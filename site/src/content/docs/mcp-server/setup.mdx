@@ -7,15 +7,14 @@ import { LinkCard, TabItem, Tabs } from '@astrojs/starlight/components';
 
 <LinkCard title="Overview" href="/alpha-sdk-api/mcp-server/overview/" description="New to the MCP servers? Start with the overview." />
 
-We provide three public MCP servers for AI-assisted development:
+We provide two public MCP servers for AI-assisted development:
 
 | Server | Name | Description | URL |
 | --- | --- | --- | --- |
 | **SDK Docs** | `CameraRemoteSDK` | Camera Remote SDK documentation, API references, and code examples (C++/C#) | `https://sdk-rag-agent-production.up.railway.app/mcp` |
 | **Help Guides** | `CameraHelp` | Camera help guides, settings, and feature documentation for 24 Sony camera models | `https://camera-rag-agent-production.up.railway.app/mcp` |
-| **Web API Docs** | `CameraWebAPI` | Alpha Camera REST API docs, endpoint reference, request/response formats, and client SDK guidance | `https://crsdk.app/mcp` |
 
-All three servers are compatible with Anthropic's LLMs (claude.ai, Claude Mobile, Claude Desktop, and Claude Code) as well as other AI-powered IDEs like Cursor. You can install any combination of them.
+Both servers are compatible with Anthropic's LLMs (claude.ai, Claude Mobile, Claude Desktop, and Claude Code) as well as other AI-powered IDEs like Cursor. You can install any combination of them.
 
 :::note
 These tools are still in Private Beta. Please do not share the MCP server URLs with others.
@@ -44,7 +43,7 @@ Repeat these steps for each MCP server you want to install:
 1. **Add the Connector**
    - Go to **Settings → Connectors**
    - Click **Add custom connector**
-   - Name it using the server name from the table above (e.g. `CameraRemoteSDK`, `CameraHelp`, or `CameraWebAPI`)
+   - Name it using the server name from the table above (e.g. `CameraRemoteSDK` or `CameraHelp`)
    - Paste the corresponding MCP Server URL into the "Remote MCP server URL" field
    - Click **Add**
    - Refresh if needed — you should now see your new connector
@@ -123,8 +122,6 @@ Run these commands to add each server you want:
 claude mcp add CameraRemoteSDK --scope user -- npx mcp-remote https://sdk-rag-agent-production.up.railway.app/mcp
 # Help Guides
 claude mcp add CameraHelp --scope user -- npx mcp-remote https://camera-rag-agent-production.up.railway.app/mcp
-# Web API Docs
-claude mcp add CameraWebAPI --scope user -- npx mcp-remote https://crsdk.app/mcp
 ```
 
 </TabItem>
@@ -135,8 +132,6 @@ claude mcp add CameraWebAPI --scope user -- npx mcp-remote https://crsdk.app/mcp
 claude mcp add CameraRemoteSDK --scope user -- cmd /c npx mcp-remote https://sdk-rag-agent-production.up.railway.app/mcp
 # Help Guides
 claude mcp add CameraHelp --scope user -- cmd /c npx mcp-remote https://camera-rag-agent-production.up.railway.app/mcp
-# Web API Docs
-claude mcp add CameraWebAPI --scope user -- cmd /c npx mcp-remote https://crsdk.app/mcp
 ```
 
 </TabItem>
@@ -183,14 +178,6 @@ Create a `.mcp.json` file in your **project root**:
         "mcp-remote",
         "https://camera-rag-agent-production.up.railway.app/mcp"
       ]
-    },
-    "CameraWebAPI": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://crsdk.app/mcp"
-      ]
     }
   }
 }
@@ -218,14 +205,6 @@ On Windows, `npx` must be wrapped with `cmd /c`:
       "args": [
         "/c", "npx", "mcp-remote",
         "https://camera-rag-agent-production.up.railway.app/mcp"
-      ]
-    },
-    "CameraWebAPI": {
-      "type": "stdio",
-      "command": "cmd",
-      "args": [
-        "/c", "npx", "mcp-remote",
-        "https://crsdk.app/mcp"
       ]
     }
   }
@@ -271,8 +250,7 @@ Auto-approve tools by adding to your settings config (`~/.claude.json`, `.claude
 {
   "approvedTools": [
     "mcp__CameraRemoteSDK",
-    "mcp__CameraHelp",
-    "mcp__CameraWebAPI"
+    "mcp__CameraHelp"
   ]
 }
 ```
@@ -298,21 +276,7 @@ Auto-approve tools by adding to your settings config (`~/.claude.json`, `.claude
     "mcp__CameraRemoteSDK__set_sdk_language",
     "mcp__CameraHelp__search_camera",
     "mcp__CameraHelp__search_help_guides",
-    "mcp__CameraHelp__search_topic",
-    "mcp__CameraWebAPI__search_sdk",
-    "mcp__CameraWebAPI__search_code_examples",
-    "mcp__CameraWebAPI__search_documentation",
-    "mcp__CameraWebAPI__search_api_functions",
-    "mcp__CameraWebAPI__search_compatibility",
-    "mcp__CameraWebAPI__search_hybrid",
-    "mcp__CameraWebAPI__search_exact_api",
-    "mcp__CameraWebAPI__search_error_codes",
-    "mcp__CameraWebAPI__search_warning_codes",
-    "mcp__CameraWebAPI__search_by_source_file",
-    "mcp__CameraWebAPI__get_sdk_context",
-    "mcp__CameraWebAPI__get_current_sdk_version",
-    "mcp__CameraWebAPI__set_sdk_version",
-    "mcp__CameraWebAPI__set_sdk_language"
+    "mcp__CameraHelp__search_topic"
   ]
 }
 ```
@@ -329,7 +293,6 @@ Wildcards (`*`) are not supported — you must explicitly list each tool or appr
 claude mcp list                                       # List all servers
 claude mcp remove CameraRemoteSDK --scope user        # Remove SDK Docs
 claude mcp remove CameraHelp --scope user             # Remove Help Guides
-claude mcp remove CameraWebAPI --scope user           # Remove Web API Docs
 ```
 
 :::note
@@ -343,7 +306,6 @@ Restart Claude Code or start a new session after modifying MCP server configurat
 | `npx` not found                       | Ensure Node.js (v18+) is installed and `npx` is on your PATH. Verify with `npx --version`.                                             |
 | Windows: `npx` not recognized         | Use the `cmd /c` wrapper as shown in the Windows configs above. If still failing, try the full path: `C:\Program Files\nodejs\npx.cmd` |
 | Server not connecting                 | Ensure you're not behind a proxy/VPN blocking the server URLs.                                                                         |
-| `approvedTools` not working           | Verify the server name in your MCP config matches the prefix in `approvedTools` (e.g. `CameraRemoteSDK`, `CameraHelp`, `CameraWebAPI`). |
 | `.mcp.json` not detected              | File must be in the **project root** directory. Restart Claude Code after creating it.                                                 |
 | macOS: permission prompt on first use | For project-scoped `.mcp.json`, Claude Code will prompt for approval on first use. Accept to continue.                                 |
 
@@ -368,7 +330,6 @@ Repeat these steps for each server you want to add:
 | ------------ | ----------------- | ----------------------------------------------------------------------- |
 | SDK Docs     | `CameraRemoteSDK` | `npx mcp-remote https://sdk-rag-agent-production.up.railway.app/mcp`    |
 | Help Guides  | `CameraHelp`      | `npx mcp-remote https://camera-rag-agent-production.up.railway.app/mcp` |
-| Web API Docs | `CameraWebAPI`    | `npx mcp-remote https://crsdk.app/mcp`                                  |
 
 5. Set **Transport Type** to `command` (stdio)
 6. Click **Save**
@@ -407,13 +368,6 @@ Create a `.cursor/mcp.json` file in your **project root**:
         "mcp-remote",
         "https://camera-rag-agent-production.up.railway.app/mcp"
       ]
-    },
-    "CameraWebAPI": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://crsdk.app/mcp"
-      ]
     }
   }
 }
@@ -437,13 +391,6 @@ Create a `.cursor/mcp.json` file in your **project root**:
       "args": [
         "/c", "npx", "mcp-remote",
         "https://camera-rag-agent-production.up.railway.app/mcp"
-      ]
-    },
-    "CameraWebAPI": {
-      "command": "cmd",
-      "args": [
-        "/c", "npx", "mcp-remote",
-        "https://crsdk.app/mcp"
       ]
     }
   }

@@ -19,13 +19,21 @@ Launch the native camera server binary from your app, wait for it to be ready, a
 
 ## Where does the binary come from?
 
-The camera server binary ships with `@alpha-sdk/api` on npm via platform-specific optional dependencies. For self-contained apps, the easiest path:
+`CameraWebApp` is built from source — see `api/distribution/INSTALL_MACOS.md`
+in the repository. The Sony Camera Remote SDK it links against can only be
+obtained by accepting Sony's licence on their download page, so there is no
+package manager that can fetch it for you.
 
-- **Node/Electron:** `npm install @alpha-sdk/api` — the `camera-server` CLI in `node_modules/.bin/` is the binary launcher
-- **Python:** Install Node + `@alpha-sdk/api`, or download the binary from GitHub releases
-- **Swift macOS:** Ship the binary inside your `.app` bundle's Resources, or download on first run
+For a self-contained app, ship the binary you built alongside your application:
 
-For this recipe, we assume the binary is at a path your app controls. The current macOS example app resolves it from a local npm install first (`node_modules/@alpha-sdk/darwin-arm64/CameraWebApp`), then falls back to `CAMERA_SERVER_BINARY`.
+- **Node / Electron:** place it in your app's resources and resolve the path at
+  runtime
+- **Python:** ship it next to your package, or point at it with an environment
+  variable
+- **Swift / macOS:** put it inside your `.app` bundle's Resources
+
+Every example below takes the binary path as input rather than assuming a
+location, and falls back to a `CAMERA_SERVER_BINARY` environment variable.
 
 ---
 
@@ -34,12 +42,15 @@ For this recipe, we assume the binary is at a path your app controls. The curren
 ### Complete recipe
 
 ```typescript
-// route.ts — mirrors example_app/src/app/api/server/route.ts
+// route.ts — starts CameraWebApp as a child process and waits for readiness.
 
 import { NextResponse } from "next/server";
-import { ServerManager } from "@alpha-sdk/api";
+import { spawn, type ChildProcess } from "node:child_process";
 
-let server: ServerManager | null = null;
+const BINARY = process.env.CAMERA_SERVER_BINARY ?? "CameraWebApp";
+const PORT = 8080;
+
+let server: ChildProcess | null = null;
 let startPromise: Promise<number> | null = null;
 
 async function isHealthyServer(port: number): Promise<boolean> {
@@ -53,27 +64,38 @@ async function isHealthyServer(port: number): Promise<boolean> {
   }
 }
 
+// The binary prints a banner on startup but gives no machine-readable "ready"
+// signal, so poll the status endpoint rather than parsing stdout.
+async function waitUntilReady(port: number, timeoutMs = 15000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await isHealthyServer(port)) return;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`Server did not become ready on port ${port}`);
+}
+
 export async function POST() {
   if (startPromise) {
-    const port = await startPromise;
-    return NextResponse.json({ status: "already_running", port });
+    return NextResponse.json({ status: "already_running", port: await startPromise });
   }
 
-  if (server) {
-    return NextResponse.json({ status: "already_running", port: server.getPort() });
+  if (server || (await isHealthyServer(PORT))) {
+    return NextResponse.json({ status: "already_running", port: PORT });
   }
-
-  if (await isHealthyServer(8080)) {
-    return NextResponse.json({ status: "already_running", port: 8080 });
-  }
-
-  const instance = new ServerManager({ port: 8080, autoPort: true });
 
   try {
     startPromise = (async () => {
-      await instance.start();
-      server = instance;
-      return instance.getPort();
+      const child = spawn(BINARY, ["--port", String(PORT)], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      child.stdout?.on("data", (d) => console.log("[server]", String(d).trim()));
+      child.stderr?.on("data", (d) => console.error("[server]", String(d).trim()));
+      child.on("exit", () => { server = null; });
+
+      await waitUntilReady(PORT);
+      server = child;
+      return PORT;
     })();
 
     const port = await startPromise;
@@ -81,6 +103,7 @@ export async function POST() {
     return NextResponse.json({ status: "started", port });
   } catch (error) {
     startPromise = null;
+    server?.kill("SIGTERM");
     server = null;
     return NextResponse.json(
       { status: "error", message: error instanceof Error ? error.message : String(error) },
@@ -94,9 +117,15 @@ export async function DELETE() {
     return NextResponse.json({ status: "not_running" });
   }
 
-  const instance = server;
+  // Ask the server to shut down over HTTP so cameras disconnect cleanly, and
+  // only fall back to a signal if it does not exit.
+  try {
+    await fetch(`http://127.0.0.1:${PORT}/api/server/shutdown`, { method: "POST" });
+  } catch {
+    /* fall through to the signal */
+  }
+  server.kill("SIGTERM");
   server = null;
-  await instance.stop();
   return NextResponse.json({ status: "stopped" });
 }
 ```
@@ -117,9 +146,9 @@ const baseUrl = `http://localhost:${payload.port}`;
 
 This is the boundary the real Next.js example app uses:
 
-- route owns `ServerManager`
+- the route owns the child process
 - browser code only talks to `/api/server`
-- the camera lifecycle layer then points `@alpha-sdk/client` at the returned port
+- the camera lifecycle layer then points your generated client at the returned port
 
 ---
 
@@ -247,7 +276,7 @@ class ServerManager:
 
 ```python
 import asyncio
-from alpha_sdk_client import AsyncAlphaSDKClient
+import httpx
 from server_manager import ServerManager
 
 async def main():
@@ -256,10 +285,12 @@ async def main():
         port=8080,
         on_log=lambda line: print("[server]", line),
     ) as server:
-        client = AsyncAlphaSDKClient(base_url=server.base_url)
-        listing = await client.cameras.list()
-        print(f"Found {len(listing.cameras)} cameras")
-        # ... work ...
+        # Either a client generated from the OpenAPI specification, or plain
+        # HTTP as shown here — the server does not care which.
+        async with httpx.AsyncClient(base_url=server.base_url) as http:
+            listing = (await http.get("/api/cameras")).json()
+            print(f"Found {len(listing['cameras'])} cameras")
+            # ... work ...
     # server automatically stopped on context exit
 
 asyncio.run(main())
@@ -500,10 +531,10 @@ public enum ServerManagerError: Error {
 
 ```swift
 #if os(macOS)
-import AlphaSDK
+import Foundation
 
 let server = ServerManager(
-    binaryPath: "/path/to/node_modules/@alpha-sdk/darwin-arm64/CameraWebApp",
+    binaryPath: Bundle.main.url(forResource: "CameraWebApp", withExtension: nil)!.path,
     port: 8080,
     onLog: { line in print("[server]", line) }
 )
@@ -511,8 +542,11 @@ let server = ServerManager(
 try await server.start()
 print("Server ready at \(server.baseURL)")
 
-let client = AlphaSDKClient(baseURL: server.baseURL, timeout: 60)
-let cameras = try await client.cameras.list()
+// Either a client generated from the OpenAPI specification, or URLSession
+// directly — the server does not care which.
+let (data, _) = try await URLSession.shared.data(
+    from: server.baseURL.appendingPathComponent("api/cameras"))
+let cameras = try JSONDecoder().decode(CameraList.self, from: data)
 print("Found \(cameras.cameras.count) cameras")
 
 // ... work ...

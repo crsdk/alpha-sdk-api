@@ -1,77 +1,129 @@
 ---
-title: "SDK Reference"
-description: "Three language clients + a Node.js server manager — pick what matches your stack"
+title: "Generate a client"
+description: "Generate a typed client for any language directly from the OpenAPI specification"
 ---
 
-import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
 
-The Alpha Camera SDK family is a set of official REST clients for the Alpha Camera REST API. Each is published independently and tracks the same versioned API surface.
+There are no hand-maintained client libraries. The API is described by an
+OpenAPI 3.1 document, and you generate a client for whatever language you are
+working in directly from it.
 
-| Language | Package | Registry | Reference |
-|---|---|---|---|
-| TypeScript / JavaScript | [`@alpha-sdk/client`](https://www.npmjs.com/package/@alpha-sdk/client) | npm | [TypeScript SDK](/alpha-sdk-api/sdk/typescript/) |
-| Python | [`alpha-sdk-client`](https://pypi.org/project/alpha-sdk-client/) | PyPI | [Python SDK](/alpha-sdk-api/sdk/python/) |
-| Swift | [`AlphaSDK`](https://github.com/crsdk/alpha-sdk-swift) | SwiftPM | [Swift SDK](/alpha-sdk-api/sdk/swift/) |
+That document is the same one the [API reference](/alpha-sdk-api/api-reference/)
+renders, and it lives beside the server that implements it, so a generated
+client tracks the real API rather than a separately maintained copy of it.
 
-## Example apps
-
-Reference apps that use the published SDKs and server package:
-
-- **Next.js / TypeScript:** [`alpha-sdk-typescript`](https://github.com/crsdk/alpha-sdk-typescript)
-- **Python notebook / data collection:** [`alpha-sdk-python`](https://github.com/crsdk/alpha-sdk-python)
-- **Swift SDK + macOS sample app:** [`alpha-sdk-swift`](https://github.com/crsdk/alpha-sdk-swift)
+```
+https://crsdk.github.io/alpha-sdk-api/api-reference/openapi.yaml
+```
 
 :::note
-Every client targets the same REST server. To run that server locally, install [`@alpha-sdk/api`](/alpha-sdk-api/web-api/server/) — it ships the native binary, the `camera-server` CLI, and (for Node.js applications) a `ServerManager` class for embedding the server lifecycle. Browser-only or mobile applications connect to a server running elsewhere on the network.
+Generating from the spec is the supported path for every language. Previously
+published `@alpha-sdk/*` packages on npm and PyPI are no longer maintained — a
+generator gives you the same typed surface without a package that has to be
+kept in step with the server by hand.
 :::
 
+## Generate
 
----
+Point any OpenAPI generator at the specification. A few common ones:
 
-## Quick orientation
+<Tabs syncKey="generator">
+<TabItem label="TypeScript">
 
-Every language client follows the same shape:
-
-```
-client
-  ├── server          health, status, logs
-  ├── cameras         list, connect, disconnect, getConnectionStatus
-  ├── properties      get, set, getAll, getPriorityKey, setPriorityKey
-  ├── actions         shutter, halfPress, afShutter, zoom, focusNearFar, movieRec
-  ├── liveView        enable, disable, getStatus, start, stop, getFrame
-  ├── sdCard          list, download, downloadThumbnail, downloadScreennail
-  └── settings        download, upload, list, importLut
+```bash
+npx @hey-api/openapi-ts \
+  -i https://crsdk.github.io/alpha-sdk-api/api-reference/openapi.yaml \
+  -o src/camera-client
 ```
 
-The following are intentionally outside the generated client surface — see [recipes](#recipes) for the recommended patterns:
+</TabItem>
+<TabItem label="Python">
 
-- **Server-Sent Events** — consume with native `EventSource` (browser), `URLSession.bytes(for:)` (Swift), or `httpx.stream` (Python).
-- **Discovery, reconnect, and lifecycle helpers** — copy the recipe that fits your application.
+```bash
+pip install openapi-python-client
+openapi-python-client generate \
+  --url https://crsdk.github.io/alpha-sdk-api/api-reference/openapi.yaml
+```
 
----
+</TabItem>
+<TabItem label="Swift">
 
-## Pick your path
+```bash
+# Add the Swift OpenAPI Generator plugin to Package.swift, then place the
+# specification at Sources/<Target>/openapi.yaml and build.
+swift package plugin --allow-writing-to-package-directory generate-code-from-openapi
+```
 
-<CardGrid>
-<LinkCard title="TypeScript" href="/alpha-sdk-api/sdk/typescript/" description="`npm install @alpha-sdk/client` — Node, Electron, Tauri, browsers." />
-  <LinkCard title="Python" href="/alpha-sdk-api/sdk/python/" description="`pip install alpha-sdk-client` — sync + async clients, Pydantic models." />
-  <LinkCard title="Swift" href="/alpha-sdk-api/sdk/swift/" description="SwiftPM — iOS 15+, macOS 12+, native async/await." />
-</CardGrid>
+</TabItem>
+<TabItem label="Any language">
 
+```bash
+# openapi-generator supports ~50 languages; swap the generator name.
+npx @openapitools/openapi-generator-cli generate \
+  -i https://crsdk.github.io/alpha-sdk-api/api-reference/openapi.yaml \
+  -g go \
+  -o ./camera-client
+```
 
-<LinkCard title="Need to run the server?" href="/alpha-sdk-api/web-api/server/" description="`@alpha-sdk/api` — installs the REST API server, the `camera-server` CLI, and a Node.js `ServerManager` class." />
+</TabItem>
+</Tabs>
 
----
+Pin the specification file into your repository rather than fetching it at build
+time if you want reproducible builds — it is a single YAML file.
+
+## What the API looks like
+
+The operations are grouped by tag, and a generated client will mirror that
+grouping:
+
+```
+server        health, status, logs
+cameras       list, connect, disconnect, getConnectionStatus
+properties    get, set, getAll, getPriorityKey, setPriorityKey
+actions       shutter, halfPress, afShutter, zoom, focusNearFar, movieRec
+liveView      enable, disable, getStatus, start, stop, getFrame
+sdCard        list, download, downloadThumbnail, downloadScreennail
+settings      download, upload, list, importLut
+```
+
+Two things sit outside what a generator will give you, because they are not
+plain request/response operations:
+
+- **Server-Sent Events** — the two event streams are long-lived and most
+  generators will not produce anything usable for them. Consume them with native
+  `EventSource` (browser), `URLSession.bytes(for:)` (Swift), or `httpx.stream`
+  (Python). See the [SSE recipe](/alpha-sdk-api/sdk/recipes/sse-events/).
+- **Discovery, reconnect and lifecycle handling** — application concerns rather
+  than API surface. The recipes below cover the usual patterns.
+
+:::caution
+Set the priority key to `pc-remote` before the camera will accept remote
+property changes or shooting commands. This trips up most first integrations —
+see [Connection](/alpha-sdk-api/web-api/connection/).
+:::
+
+## Running the server
+
+Every client, generated or not, talks to the REST server running on the machine
+the camera is attached to.
+
+<LinkCard
+  title="Run the server"
+  href="/alpha-sdk-api/web-api/server/"
+  description="Install and start the server, and the endpoints it exposes for health and logs."
+/>
 
 ## Recipes
 
-Patterns that live outside the generated SDK surface. Copy and adapt — every recipe shows TypeScript, Python, and Swift side-by-side.
+Patterns that sit outside generated code. Each works against the REST API
+directly, so they apply whatever language you generate for.
 
 <CardGrid>
-<LinkCard title="SSE event consumer" href="/alpha-sdk-api/sdk/recipes/sse-events/" description="React in real time to `propertyChanged`, `downloadComplete`, `transferProgress`, etc." />
+<LinkCard title="SSE event consumer" href="/alpha-sdk-api/sdk/recipes/sse-events/" description="React in real time to propertyChanged, downloadComplete, transferProgress." />
   <LinkCard title="Live-view JPEG polling" href="/alpha-sdk-api/sdk/recipes/live-view-polling/" description="Pull a frame every ~66ms and render it." />
-  <LinkCard title="Server subprocess" href="/alpha-sdk-api/sdk/recipes/server-subprocess/" description="Spawn the native server from Python or any non-Node runtime." />
-  <LinkCard title="Discovery + reconnect" href="/alpha-sdk-api/sdk/recipes/discovery-reconnect/" description="Poll `/api/cameras`, track which is connected, hot-plug handling." />
-  <LinkCard title="Retry + backoff" href="/alpha-sdk-api/sdk/recipes/retry-backoff/" description="Hand-roll exponential backoff for flaky connect / SD card calls." />
-  <LinkCard title="React hook" href="/alpha-sdk-api/sdk/recipes/react-hook/" description="`useCamera()` — bind one camera's connection + property state." />
+  <LinkCard title="Server subprocess" href="/alpha-sdk-api/sdk/recipes/server-subprocess/" description="Spawn and supervise the native server from your own runtime." />
+  <LinkCard title="Discovery + reconnect" href="/alpha-sdk-api/sdk/recipes/discovery-reconnect/" description="Poll /api/cameras, track which is connected, handle hot-plug." />
+  <LinkCard title="Retry + backoff" href="/alpha-sdk-api/sdk/recipes/retry-backoff/" description="Exponential backoff for flaky connect and SD card calls." />
+  <LinkCard title="React hook" href="/alpha-sdk-api/sdk/recipes/react-hook/" description="useCamera() — bind one camera's connection and property state." />
 </CardGrid>

@@ -3,6 +3,13 @@ title: "Retry + backoff"
 description: "Hand-roll exponential backoff for flaky calls"
 ---
 
+:::note
+`CameraClient` below is whatever client you
+[generated from the specification](/alpha-sdk-api/sdk/overview/) — the pattern
+is identical if you call the REST API with `fetch`, `httpx` or `URLSession`
+directly. Only the call sites change.
+:::
+
 A small utility for retrying REST calls that fail transiently. Useful around:
 
 - `connect()` immediately after plugging in a camera (takes a few seconds to be ready)
@@ -90,9 +97,9 @@ export async function retry<T>(
 
 ```typescript
 import { retry } from "./retry";
-import { AlphaSDKClient, BadRequestError } from "@alpha-sdk/client";
+// A generated client, or plain fetch — the retry logic is the same either way.
 
-const client = new AlphaSDKClient({ baseUrl: "http://localhost:8080" });
+const client = new CameraClient({ baseUrl: "http://localhost:8080" });
 
 const result = await retry(
   () => client.cameras.connect({ cameraId, mode: "remote" }),
@@ -183,12 +190,15 @@ async def retry(
 ```python
 import asyncio
 import httpx
-from alpha_sdk_client import AsyncAlphaSDKClient
-from alpha_sdk_client.core.api_error import ApiError
+from camera_client import CameraClient  # your generated client
 from retry import retry
 
 async def main():
-    client = AsyncAlphaSDKClient(base_url="http://localhost:8080")
+    client = CameraClient(base_url="http://localhost:8080")
+
+    # Whatever your generated client raises for a non-2xx response; most expose
+    # the HTTP status on the exception.
+    from camera_client.errors import ApiError
 
     # Retry only on "not ready" errors
     def retry_pred(err, attempt):
@@ -275,14 +285,15 @@ public func retry<T>(
 ```swift
 import AlphaCameraRestAPI
 
-let client = AlphaSDKClient(baseURL: "http://localhost:8080")
+let client = CameraClient(baseURL: "http://localhost:8080")
 let cameraId = "D06CE00004C4"
 
 let result = try await retry(
     options: RetryOptions(maxAttempts: 5, initialDelaySec: 1.0),
     shouldRetry: { error, _ in
-        // The SDK error exposes statusCode + body; inspect here
-        if let apiErr = error as? AlphaSDKError,
+        // Whatever your generated client throws for a non-2xx response;
+        // most expose the status code on the error.
+        if let apiErr = error as? ApiError,
            apiErr.statusCode == 400 {
             let msg = "\(error)".lowercased()
             return msg.contains("not ready") || msg.contains("not connected")
@@ -323,7 +334,7 @@ A common use is wrapping the connect + priority-key sequence so both settle race
 
 ```typescript
 async function connectAndReady(
-  client: AlphaSDKClient,
+  client: CameraClient,
   cameraId: string,
   mode: "remote" | "remote-transfer" | "contents",
 ) {
