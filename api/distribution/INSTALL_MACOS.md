@@ -21,10 +21,22 @@ CameraWebApp  # Run from anywhere
 
 ## Homebrew Distribution
 
+> **Not published yet.** Two things must exist first, and neither does today:
+>
+> 1. **The tap repository.** `brew tap crsdk/alpha-sdk-api` expands to
+>    `github.com/crsdk/homebrew-alpha-sdk-api` — Homebrew inserts the
+>    `homebrew-` prefix. That repository does not exist, so the tap command
+>    fails regardless of what this formula says.
+> 2. **A release to download.** The formula points at the `v2.1.0` asset, but
+>    the repo has no releases at all, so the `url` and its `sha256` refer to a
+>    file that was never published.
+>
+> The commands below are the intended end state, not something that works now.
+
 Once published, users will install via:
 
 ```bash
-brew tap jordlee/alpha-sdk-api
+brew tap crsdk/alpha-sdk-api
 brew install sony-camera-webserver
 CameraWebApp
 ```
@@ -55,11 +67,11 @@ curl http://localhost:8080/api/cameras
 
 ### 3. Install Client Libraries
 
-Published SDK package details, npm install commands, and sample apps are documented at `https://crsdk.app/sdk/overview`.
+Published SDK package details, npm install commands, and sample apps are documented at `https://crsdk.github.io/alpha-sdk-api/sdk/overview/`.
 
 ### 4. Test with Client Library
 
-Use the hosted SDK docs and example apps at `https://crsdk.app/sdk/overview`.
+Use the hosted SDK docs and example apps at `https://crsdk.github.io/alpha-sdk-api/sdk/overview/`.
 
 ## Creating Release Package
 
@@ -92,7 +104,7 @@ This creates `package/CameraWebApp-macos.tar.gz` with SHA256 hash for Homebrew.
 ### Step 3: Users Install
 
 ```bash
-brew tap jordlee/alpha-sdk-api
+brew tap crsdk/alpha-sdk-api
 brew install sony-camera-webserver
 ```
 
