@@ -94,6 +94,17 @@
 
         // Readers should be able to grab the spec they are reading.
         hideDownloadButton: false,
+
+        // The prose docs use a dark scheme built from Scalar's own palette, so
+        // default this side to dark too — otherwise following the sidebar link
+        // flips the reader from dark to light mid-session. The in-page toggle
+        // still works.
+        darkMode: true,
+
+        // Scalar's SaaS toolbar (Configure / Share / Deploy) is localhost-only
+        // by default. Pinned off so a future default change cannot surface
+        // upsell controls on a published Sony-branded page with no maintainer.
+        showDeveloperTools: 'never',
       });
     </script>
   </body>

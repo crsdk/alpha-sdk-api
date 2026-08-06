@@ -171,6 +171,7 @@ export function useCameraSession(): CameraSessionState & CameraSessionActions {
 
 ## Usage
 
+{% raw %}
 ```tsx
 import { useCameraSession } from "./use-camera-session";
 
@@ -206,6 +207,7 @@ export function CameraSidebar() {
   );
 }
 ```
+{% endraw %}
 
 ## Why this matches the real app
 

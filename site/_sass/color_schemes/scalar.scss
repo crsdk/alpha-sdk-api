@@ -1,0 +1,42 @@
+// Dark colour scheme matched to the Scalar API reference, so moving between the
+// prose docs and /api-reference does not feel like two different sites.
+//
+// The values are Scalar's own, read out of the running reference's computed
+// CSS custom properties rather than eyeballed:
+//
+//   --scalar-background-1  #0f0f0f    page
+//   --scalar-background-2  #1a1a1a    cards, code, tables
+//   --scalar-background-3  #272727    raised / hover
+//   --scalar-border-color  #2d2d2d
+//   --scalar-color-1       #e7e7e7    headings
+//   --scalar-color-2       #a4a4a4    secondary text
+//   --scalar-color-3       #797979    muted
+//
+// Start from the stock dark scheme so anything not named here still has a
+// sensible dark value, then override. These are plain assignments, not
+// !default, so later wins.
+@import "./color_schemes/dark";
+
+$color-scheme: dark;
+
+// Neutrals
+$body-background-color: #0f0f0f;
+$sidebar-color: #0f0f0f;
+$body-heading-color: #e7e7e7;
+$body-text-color: #b9b9b9;
+$border-color: #2d2d2d;
+
+$code-background-color: #1a1a1a;
+$table-background-color: #1a1a1a;
+$search-background-color: #1a1a1a;
+$feedback-color: #1a1a1a;
+$base-button-color: #1a1a1a;
+
+$nav-child-link-color: #a4a4a4;
+$search-result-preview-color: #a4a4a4;
+$code-linenumber-color: #797979;
+
+// Single accent, matching Scalar's link blue. Verb colours live in
+// custom/custom.scss, where they are applied.
+$link-color: #4eb3ec;
+$btn-primary-color: #4eb3ec;

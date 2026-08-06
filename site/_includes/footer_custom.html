@@ -1,0 +1,21 @@
+<script>
+  // Tags inline code spans that are exactly an HTTP verb, so custom.scss can
+  // colour them the same way Scalar colours method badges. CSS has no way to
+  // match on text content, and rewriting 41 ported pages to carry markup for
+  // this would be worse — it would have to be redone on every re-port.
+  //
+  // Purely decorative: with JS off the verbs render as ordinary inline code.
+  (function () {
+    var VERBS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+    document.querySelectorAll('.main-content code').forEach(function (el) {
+      if (el.closest('pre')) return; // leave fenced code blocks alone
+      var text = (el.textContent || '').trim();
+      var verb = text.split(/\s+/)[0];
+      if (VERBS.indexOf(verb) === -1) return;
+      // Only a bare verb, or a verb followed by a path — not prose that merely
+      // happens to start with one.
+      if (text !== verb && !/^\/|^https?:/.test(text.slice(verb.length).trim())) return;
+      el.classList.add('verb', 'verb-' + verb.toLowerCase());
+    });
+  })();
+</script>

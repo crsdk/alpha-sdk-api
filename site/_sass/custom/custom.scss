@@ -1,0 +1,93 @@
+// ---------------------------------------------------------------------------
+// Layout: stop the sidebar drifting toward the middle on wide screens
+// ---------------------------------------------------------------------------
+//
+// just-the-docs centres the whole two-column layout above the `lg` breakpoint.
+// It does that by growing the SIDEBAR to absorb half the leftover space:
+//
+//   .side-bar { width: calc((100% - #{$nav-width + $content-width}) / 2 + #{$nav-width}); }
+//
+// so on a wide monitor the nav ends up near the centre of the screen with a
+// large empty gutter to its left. Pin the sidebar to its natural width instead
+// and let the content column take the room that frees up.
+
+@include mq(lg) {
+  .side-bar {
+    width: $nav-width;
+    min-width: $nav-width;
+  }
+
+  .side-bar + .main {
+    margin-left: $nav-width;
+  }
+}
+
+.main {
+  // Wider than the stock 50rem, but still capped — full-bleed body text at
+  // 2560px is unreadable. Tables and code blocks below are allowed past it.
+  max-width: 62rem;
+}
+
+// Long API tables and wide code samples scroll within themselves rather than
+// pushing the page sideways.
+.main-content {
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  pre.highlight,
+  figure.highlight {
+    overflow-x: auto;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// HTTP verb accents
+// ---------------------------------------------------------------------------
+//
+// Same hues Scalar uses for method badges, so a GET reads the same colour in
+// the guides as it does in the reference. Applied to inline code spans whose
+// entire content is a verb — see _includes/footer_custom.html, which tags them.
+// CSS cannot match on text content, hence the tagging step.
+
+$verb-get: #4eb3ec;
+$verb-post: #3ecf8e;
+$verb-put: #ff8d4d;
+$verb-patch: #edbe20;
+$verb-delete: #f0616d;
+
+.main-content code.verb {
+  font-weight: 600;
+  background-color: transparent;
+  padding-left: 0;
+  padding-right: 0;
+  letter-spacing: 0.02em;
+
+  &.verb-get { color: $verb-get; }
+  &.verb-post { color: $verb-post; }
+  &.verb-put { color: $verb-put; }
+  &.verb-patch { color: $verb-patch; }
+  &.verb-delete { color: $verb-delete; }
+}
+
+// ---------------------------------------------------------------------------
+// Callouts: match the neutral surface rather than the theme's tinted blocks
+// ---------------------------------------------------------------------------
+
+.main-content {
+  .note,
+  .tip,
+  .info,
+  .warning,
+  .check {
+    background-color: #1a1a1a;
+    border-radius: 6px;
+  }
+}

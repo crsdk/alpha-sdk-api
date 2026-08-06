@@ -12,6 +12,10 @@ description: >-
 
 theme: just-the-docs
 
+# Dark, neutral, matched to the Scalar reference — see
+# _sass/color_schemes/scalar.scss for where the values come from.
+color_scheme: scalar
+
 # Project Pages serve from https://<owner>.github.io/alpha-sdk-api, so every
 # internal link needs this prefix. Content links are written as
 # {{ site.baseurl }}/... for exactly this reason — see the porting notes in
