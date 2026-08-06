@@ -94,7 +94,13 @@ jobs:
     # Only the public repo publishes. The private development repo shares this
     # workflow file but has no Pages site, and enabling one there would publish
     # a tree that deliberately tracks Sony SDK headers.
-    if: github.repository == 'jordlee/alpha-sdk-api' && github.event_name != 'pull_request'
+    #
+    # Matched on repository NAME, not owner/name, so an ownership transfer does
+    # not silently stop publishing. The site deliberately has no custom domain,
+    # so its URL already follows the owner (<owner>.github.io/alpha-sdk-api);
+    # pinning the owner here as well would mean a transfer breaks the deploy at
+    # the same moment it changes the URL, which is the worst time to find out.
+    if: endsWith(github.repository, '/alpha-sdk-api') && github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     permissions:
