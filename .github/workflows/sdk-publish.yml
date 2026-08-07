@@ -101,12 +101,16 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-      - name: Publish
+      - name: Build and publish
         working-directory: generated/typescript
         run: |
+          npm install -g npm@latest
+          # Install local deps (incl. the pinned TypeScript) and build in-place,
+          # so the publish never falls back to a stray global compiler.
+          npm install
+          npm run build
           # npm >= 11.5 performs OIDC Trusted Publishing automatically when the
           # package has a Trusted Publisher configured — no NODE_AUTH_TOKEN.
-          npm install -g npm@latest
           npm publish
 
   publish-python:
@@ -128,3 +132,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: generated/python/dist/
+          skip-existing: true # idempotent: don't fail if this version is already on PyPI
