@@ -55,12 +55,11 @@
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:sentinels": "node -e \"require('fs').writeFileSync('dist/esm/package.json','{\\\"type\\\":\\\"module\\\"}'); require('fs').writeFileSync('dist/cjs/package.json','{\\\"type\\\":\\\"commonjs\\\"}');\"",
     "clean": "rm -rf dist",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.6.0"
+    "typescript": "5.6.3"
   },
   "publishConfig": {
     "access": "public"
