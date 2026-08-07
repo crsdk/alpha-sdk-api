@@ -4,13 +4,13 @@
   "description": "TypeScript client for the Alpha Camera REST API — control Sony cameras via REST.",
   "license": "MIT",
   "author": "Alpha Camera",
-  "homepage": "https://github.com/crsdk/alpha-sdk-typescript",
+  "homepage": "https://github.com/crsdk/alpha-sdk-api",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/crsdk/alpha-sdk-typescript.git"
+    "url": "git+https://github.com/crsdk/alpha-sdk-api.git"
   },
   "bugs": {
-    "url": "https://github.com/crsdk/alpha-sdk-typescript/issues"
+    "url": "https://github.com/crsdk/alpha-sdk-api/issues"
   },
   "keywords": [
     "sony",
