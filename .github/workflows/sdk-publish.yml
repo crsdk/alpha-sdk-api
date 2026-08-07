@@ -1,0 +1,130 @@
+name: SDK Publish
+
+# Publishes the generated clients to npm (@alpha-sdk/client) and PyPI
+# (alpha-sdk-client) on a version tag, e.g. `sdk-v0.4.0`.
+#
+# CREDENTIAL MODEL — no long-lived tokens are stored for publishing:
+#   * npm  -> OIDC Trusted Publishing (needs `id-token: write`)
+#   * PyPI -> OIDC Trusted Publishing via pypa/gh-action-pypi-publish
+#
+# PREREQUISITE (one-time, in the registry consoles by the package owner):
+#   1. npm: Trusted Publisher on @alpha-sdk/client -> repo crsdk/alpha-sdk-api,
+#      workflow sdk-publish.yml.  [DONE]
+#   2. PyPI: Trusted Publisher on project alpha-sdk-client -> same repo +
+#      workflow, then set repo variable PUBLISH_PYPI=true to activate the
+#      Python job. Until then the Python job is skipped (not failed), so npm
+#      releases cleanly on its own.
+#
+# Versioning is maintainer-gated: publishing happens only when a human pushes a
+# `sdk-v*` tag, never automatically on merge. The first tag must be > the
+# currently-published version (npm/PyPI reject duplicate versions).
+
+on:
+  push:
+    tags:
+      - 'sdk-v*.*.*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Generate + build only; skip publishing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    name: Generate + build clients
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Derive SDK version from tag
+        id: ver
+        run: |
+          # sdk-v0.4.0 -> 0.4.0 ; workflow_dispatch falls back to 0.0.0-dev
+          ref="${GITHUB_REF_NAME}"
+          if [[ "$ref" == sdk-v* ]]; then
+            echo "version=${ref#sdk-v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Validate the API contract
+        run: npx fern-api@5.91.0 check
+      - name: Generate clients
+        run: |
+          npx fern-api@5.91.0 generate --group ts-sdk --local
+          npx fern-api@5.91.0 generate --group python-sdk --local
+      - name: Assemble + version-stamp packages
+        env:
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          cp fern/packaging/typescript/* generated/typescript/
+          cp LICENSE generated/typescript/
+          cp fern/packaging/python/pyproject.toml generated/python/
+          cp LICENSE generated/python/
+          cp generated/python/src/alpha_sdk_client/README.md generated/python/README.md 2>/dev/null || echo "# alpha-sdk-client" > generated/python/README.md
+          ( cd generated/typescript && npm pkg set version="$V" )
+          sed -i "s/^version = .*/version = \"$V\"/" generated/python/pyproject.toml
+      - name: Build packages
+        run: |
+          ( cd generated/typescript && npm install && npm run build )
+          ( cd generated/python && python -m pip install --upgrade build && python -m build )
+      - uses: actions/upload-artifact@v4
+        with:
+          name: generated-sdks
+          path: generated/
+          retention-days: 14
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+
+  publish-typescript:
+    name: Publish @alpha-sdk/client to npm
+    needs: generate
+    if: ${{ github.event_name == 'push' || !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for npm OIDC Trusted Publishing + provenance
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: generated-sdks
+          path: generated/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Publish
+        working-directory: generated/typescript
+        run: |
+          # npm >= 11.5 performs OIDC Trusted Publishing automatically when the
+          # package has a Trusted Publisher configured — no NODE_AUTH_TOKEN.
+          npm install -g npm@latest
+          npm publish
+
+  publish-python:
+    name: Publish alpha-sdk-client to PyPI
+    needs: generate
+    # Dormant until PyPI is ready: set repo variable PUBLISH_PYPI=true after the
+    # alpha-sdk-client Trusted Publisher is configured (post org approval).
+    if: ${{ vars.PUBLISH_PYPI == 'true' && (github.event_name == 'push' || !inputs.dry_run) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for PyPI OIDC Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: generated-sdks
+          path: generated/
+      - name: Publish to PyPI (OIDC, no token)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: generated/python/dist/

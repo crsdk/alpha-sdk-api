@@ -1,0 +1,47 @@
+# Fern generator configuration for the Alpha Camera REST API clients.
+#
+# Single source of truth: ../api/openapi.yaml. The published packages
+# (@alpha-sdk/client on npm, alpha-sdk-client on PyPI) are generated from that
+# spec and never hand-edited.
+#
+# Generators run LOCALLY via Docker (`fern generate --group <g> --local`):
+#   - no Fern account, no FERN_TOKEN, no hosted Fern service
+#   - generator images are public pulls
+# This is the same path that produced the currently-published packages
+# (the shipped Python client's .fern/metadata.json shows invokedBy: manual).
+#
+# After changing this file, ALWAYS validate before relying on it:
+#   npx fern-api@5.91.0 check
+# Bump generator versions deliberately — a generator bump can change the
+# emitted API surface. Confirm available versions with:
+#   npx fern-api@5.91.0 generator list
+
+api:
+  specs:
+    - openapi: ../api/openapi.yaml
+
+default-group: ts-sdk
+
+groups:
+  # -------- TypeScript: publishes to npm as @alpha-sdk/client --------
+  ts-sdk:
+    generators:
+      - name: fernapi/fern-typescript-sdk
+        version: 3.87.2
+        output:
+          location: local-file-system
+          path: ../generated/typescript
+
+  # -------- Python: publishes to PyPI as alpha-sdk-client --------
+  python-sdk:
+    generators:
+      - name: fernapi/fern-python-sdk
+        version: 5.26.0
+        output:
+          location: local-file-system
+          # Nest under src/alpha_sdk_client so the vendored pyproject.toml
+          # (fern/packaging/python) can build a correctly-named wheel.
+          path: ../generated/python/src/alpha_sdk_client
+        config:
+          package_name: alpha_sdk_client
+          client_class_name: AlphaSDKClient

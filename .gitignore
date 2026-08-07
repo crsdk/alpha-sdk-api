@@ -109,3 +109,9 @@ site/public/api-reference/openapi.yaml
 site/node_modules/
 site/dist/
 site/.astro/
+
+# Fern SDK generation. Output is generated in CI (and can be mirrored to the SDK
+# repos); it is never committed here. Fern's local cache is transient.
+/generated/
+/fern/.definition/
+/.fern/

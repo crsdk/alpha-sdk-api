@@ -1,0 +1,68 @@
+{
+  "name": "@alpha-sdk/client",
+  "version": "0.0.0",
+  "description": "TypeScript client for the Alpha Camera REST API — control Sony cameras via REST.",
+  "license": "MIT",
+  "author": "Alpha Camera",
+  "homepage": "https://github.com/crsdk/alpha-sdk-typescript",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crsdk/alpha-sdk-typescript.git"
+  },
+  "bugs": {
+    "url": "https://github.com/crsdk/alpha-sdk-typescript/issues"
+  },
+  "keywords": [
+    "sony",
+    "alpha",
+    "camera",
+    "rest",
+    "api",
+    "sdk",
+    "client",
+    "photography",
+    "tethering",
+    "remote-control"
+  ],
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "npm run clean && npm run build:esm && npm run build:cjs && npm run build:sentinels",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:sentinels": "node -e \"require('fs').writeFileSync('dist/esm/package.json','{\\\"type\\\":\\\"module\\\"}'); require('fs').writeFileSync('dist/cjs/package.json','{\\\"type\\\":\\\"commonjs\\\"}');\"",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.6.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
