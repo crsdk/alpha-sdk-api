@@ -1,0 +1,154 @@
+name: Docs site
+
+# Publishes the API reference and request console to GitHub Pages.
+#
+# The site is static files only. It has no backend and never talks to a camera:
+# the request console runs in the reader's browser and calls the server on their
+# own machine at http://localhost:8080. See site/api-reference/index.html.
+#
+# The published spec is NOT a second copy. api/openapi.yaml — the one that lives
+# beside the server that implements it — is copied into the site at build time.
+# Do not add a checked-in duplicate under site/; a synced pair is the exact
+# failure this layout exists to prevent.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'api/openapi.yaml'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    paths:
+      - 'site/**'
+      - 'api/openapi.yaml'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # Runs on pull requests too, so a spec that would render a broken reference is
+  # caught before merge rather than after publish.
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A syntactically broken spec makes Scalar render an empty page with no
+      # visible error. Fail loudly here instead. Uses the repo's existing
+      # redocly.yaml, so this gate matches the rules the spec is already held to.
+      # Warnings do not fail the build; structural errors do.
+      - name: Validate OpenAPI spec
+        run: npx --yes @redocly/cli@2 lint api/openapi.yaml
+
+      # The spec is copied in rather than committed under site/, so there is
+      # exactly one copy in the repo — the one beside the server that
+      # implements it. Runs before the build so it is picked up as a static
+      # asset from public/.
+      - name: Stage the OpenAPI spec into the site
+        run: cp api/openapi.yaml site/public/api-reference/openapi.yaml
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      # `npm ci` installs exactly the lockfile, so the published site cannot
+      # change because a transitive dependency shipped a new version — the
+      # build has no maintainer watching it.
+      - name: Install dependencies
+        working-directory: site
+        run: npm ci
+
+      - name: Build with Astro Starlight
+        working-directory: site
+        run: npm run build
+
+      - name: Collect build output
+        run: mv site/dist _site
+
+      - name: Assert the vendored bundle is present and unmodified
+        run: |
+          set -euo pipefail
+          echo '25e0a1ef537dc7f1aa41dd8d22b94d8703dcfab34361f4d2ee84ac0600c8a457  _site/assets/scalar/standalone.js' \
+            | sha256sum -c -
+
+      # Catches the mistake the vendoring exists to prevent: someone pasting a
+      # CDN <script> back in during a future edit.
+      #
+      # Only resource loads count — <script src>, <link href>, <img src>,
+      # <iframe src>. Ordinary <a href> links to github.com are fine and are
+      # deliberately not matched; a link is not a runtime dependency.
+      - name: Assert no third-party runtime dependencies in page HTML
+        run: |
+          python3 - <<'PY'
+          import re, sys, pathlib
+
+          # Only RESOURCE LOADS count. Deliberately not flagged:
+          #   <a href>            a link is not a runtime dependency
+          #   <link rel=canonical|alternate|sitemap>
+          #                       self-referential metadata Starlight emits on
+          #                       every page; it fetches nothing
+          TAG = re.compile(r'<(script|img|iframe|link)\b([^>]*)>', re.I)
+          ATTR = lambda a, n: (re.search(rf'{n}\s*=\s*"([^"]*)"', a, re.I) or [None, ''])[1]
+          METADATA_REL = {'canonical', 'alternate', 'sitemap', 'me', 'manifest'}
+
+          bad = []
+          for f in pathlib.Path('_site').rglob('*.html'):
+              html = f.read_text(encoding='utf-8', errors='replace')
+              for m in TAG.finditer(html):
+                  tag, attrs = m.group(1).lower(), m.group(2)
+                  if tag == 'link':
+                      rel = ATTR(attrs, 'rel').lower().strip()
+                      if not rel or rel in METADATA_REL:
+                          continue
+                      url = ATTR(attrs, 'href')
+                  else:
+                      url = ATTR(attrs, 'src')
+                  if url.startswith(('http://', 'https://')):
+                      bad.append(f'{f}: <{tag}> -> {url}')
+
+          if bad:
+              print('::error::Site HTML must not load resources from external hosts.')
+              print('\n'.join(sorted(set(bad))[:20]))
+              print('Vendor the asset under site/public/assets/ instead.')
+              print('See site/public/assets/scalar/VENDORED.md.')
+              sys.exit(1)
+          print('OK: no external runtime resource loads.')
+          PY
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to Pages
+    # Only the public repo publishes. The private development repo shares this
+    # workflow file but has no Pages site, and enabling one there would publish
+    # a tree that deliberately tracks Sony SDK headers.
+    #
+    # Matched on repository NAME, not owner/name, so an ownership transfer does
+    # not silently stop publishing. The site deliberately has no custom domain,
+    # so its URL already follows the owner (<owner>.github.io/alpha-sdk-api);
+    # pinning the owner here as well would mean a transfer breaks the deploy at
+    # the same moment it changes the URL, which is the worst time to find out.
+    if: endsWith(github.repository, '/alpha-sdk-api') && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,131 @@
+---
+title: "Run the server"
+description: "Build and run the Alpha Camera REST API server, and the endpoints it exposes for health, logs and shutdown"
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+The REST API is a single native binary, `CameraWebApp`, that runs on the machine
+the camera is physically attached to. Everything else — the
+[API reference](/alpha-sdk-api/api-reference/), any
+[client you generate](/alpha-sdk-api/sdk/overview/) — talks to it over HTTP.
+
+:::note
+There is no package to install. The server is built from source; see
+`api/distribution/INSTALL_MACOS.md` in the repository for the current build
+steps and prerequisites. The Sony Camera Remote SDK it links against can only
+be obtained by accepting Sony's licence on their download page, so it cannot be
+fetched automatically.
+:::
+
+## Run it
+
+```bash
+CameraWebApp
+```
+
+The server listens on `http://localhost:8080` and prints its startup banner. It
+handles `SIGINT` and `SIGTERM`, so <kbd>Ctrl</kbd>+<kbd>C</kbd> shuts it down
+cleanly — cameras are disconnected and open SSE streams closed before it exits.
+
+### Options
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--port`, `-p` | `8080` | Port to listen on. Must be 1–65535. |
+
+```bash
+CameraWebApp --port 9000
+```
+
+That is the complete set of flags. Anything else on the command line is ignored.
+
+## Running it from your own application
+
+The server is an ordinary process, so any language that can spawn a subprocess
+can supervise it — start it, wait for `/api/server/status` to answer, and stop
+it on exit. See the
+[server subprocess recipe](/alpha-sdk-api/sdk/recipes/server-subprocess/) for a
+worked example including port selection and readiness polling.
+
+## Health and control endpoints
+
+See the [API reference](/alpha-sdk-api/api-reference/) for full request and
+response schemas.
+
+### Server status
+
+`GET /api/server/status` returns server version, uptime, platform, and camera
+counts. Poll this to confirm the server is ready before issuing other calls.
+
+<Tabs>
+<TabItem label="curl">
+
+```bash
+curl http://localhost:8080/api/server/status
+```
+
+</TabItem>
+<TabItem label="Response">
+
+```json
+{
+  "success": true,
+  "server": {
+    "version": "3.0.0",
+    "sdkVersion": "V2.01.00",
+    "uptime": 42,
+    "platform": "darwin-arm64"
+  },
+  "cameras": {
+    "connected": 1,
+    "discovered": 2
+  }
+}
+```
+
+</TabItem>
+</Tabs>
+
+### Server logs
+
+`GET /api/server/logs` returns buffered server log output. Query params: `lines`
+(default 100), `level` (default `info`).
+
+<Tabs>
+<TabItem label="curl">
+
+```bash
+curl http://localhost:8080/api/server/logs
+```
+
+</TabItem>
+<TabItem label="Response">
+
+```json
+{
+  "success": true,
+  "logs": [
+    {
+      "timestamp": "2026-03-02T12:18:45",
+      "level": "info",
+      "message": "GET /api/server/status"
+    }
+  ],
+  "total": 47
+}
+```
+
+</TabItem>
+</Tabs>
+
+### Shutdown
+
+`POST /api/server/shutdown` initiates graceful shutdown: disconnects all
+cameras, closes open SSE streams, then exits. Prefer this over sending a signal
+when shutting the server down from another process — it lets the camera
+disconnect cleanly.
+
+```bash
+curl -X POST http://localhost:8080/api/server/shutdown
+```

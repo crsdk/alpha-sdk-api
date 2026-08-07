@@ -1,7 +1,7 @@
 class SonyCameraWebserver < Formula
   desc "REST API server for Sony Camera Remote SDK"
-  homepage "https://crsdk.app/"
-  url "https://github.com/jordlee/alpha-sdk-api/releases/download/v2.1.0/CameraWebApp-macos.tar.gz"
+  homepage "https://crsdk.github.io/alpha-sdk-api/"
+  url "https://github.com/crsdk/alpha-sdk-api/releases/download/v2.1.0/CameraWebApp-macos.tar.gz"
   sha256 "72bff35ea89759992c04b30203545bdfb21ca52a010374a97f6ae076a5ce3463"
   version "2.1.0"
   license "MIT"
@@ -22,7 +22,7 @@ class SonyCameraWebserver < Formula
       The server will run on http://localhost:8080
 
       Client libraries and SDK docs:
-        https://crsdk.app/sdk/overview
+        https://crsdk.github.io/alpha-sdk-api/sdk/overview/
 
       Documentation: #{homepage}
     EOS

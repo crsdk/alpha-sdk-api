@@ -1,0 +1,80 @@
+---
+title: "Adding camera coverage"
+description: "The two shapes a new camera feature takes, and the files each one touches"
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+The Camera Remote SDK exposes far more than this API currently surfaces. Adding
+a feature takes one of two shapes, and picking the right one first saves most of
+the work.
+
+## Which shape is it?
+
+<Tabs>
+<TabItem label="A property or action">
+
+Most features. The SDK call is a single get or set, and the generic endpoints
+already handle the request, the response envelope and the error cases.
+
+Add an entry to `PROPERTY_MAP` or `ACTION_MAP` in
+`api/server/src/CameraWebController.cpp`, and if the value needs converting in
+either direction, add a helper to `api/server/src/device/RestPropertyParsers.*`.
+
+No new endpoint is created — the feature appears under the existing
+`/properties/{name}` or `/actions/{name}` routes.
+
+</TabItem>
+<TabItem label="A new device method">
+
+Needed when the feature is a *sequence* rather than a value: several SDK calls
+in order, a bounded wait, or a callback that has to be collected before
+responding. Live view, file transfer and the AF frame endpoints are all this
+shape.
+
+Add a non-interactive method to `api/server/src/device/CameraDeviceRest.*` and
+wire it through the controller as its own route.
+
+Keep the method non-interactive — it must never block on console input or
+prompt, because it runs inside an HTTP request.
+
+</TabItem>
+</Tabs>
+
+## Every feature updates these
+
+| File | What changes |
+| --- | --- |
+| `api/server/src/device/CameraDeviceRest.*` | Only when a new SDK sequence is needed |
+| `api/server/src/device/RestPropertyParsers.*` | Only when new value parsing or formatting is needed |
+| `api/server/src/CameraWebController.*` | The REST handling, and the map entry |
+| `api/openapi.yaml` | **Always.** The contract is not optional |
+| `site/src/content/docs/` | When the behaviour is not obvious from the contract alone |
+
+The full walkthrough, including how to find the right SDK call, is in
+`docs/ADDING_SDK_APIS.md`.
+
+## Describe conditional behaviour honestly
+
+Several endpoints are not simply supported or unsupported — they depend on the
+body, the firmware, or the camera's current settings:
+
+- Button press accepts only the keys a given body reports, and returns `400`
+  with `data.supported_buttons` for anything else.
+- The AF frame endpoints return `400` whenever the current focus area draws no
+  box.
+- Remote touch works on Alpha bodies, but choosing what the touch *does* is
+  broadcast-only.
+
+When a feature behaves like this, document the runtime signal rather than
+publishing a support matrix. A matrix built from one camera goes stale on the
+next firmware release, and readers cannot tell which entries were measured and
+which were assumed. See
+[Capabilities discovered at runtime](/alpha-sdk-api/web-api/compatibility/#capabilities-discovered-at-runtime).
+
+## Testing
+
+`docs/TESTING.md` covers the unit suite and the camera-backed end-to-end checks.
+Unit tests run without a camera or the SDK, which is what CI executes; anything
+touching hardware has to be run by hand and reported in the pull request with
+the model, firmware, connection mode and SDK version.

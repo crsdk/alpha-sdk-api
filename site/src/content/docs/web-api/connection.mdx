@@ -1,0 +1,129 @@
+---
+title: "Connection"
+description: "Discover, connect, and disconnect cameras"
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components';
+
+Enumerate cameras connected via USB and network, then connect in the desired mode. Priority key **must** be set to `pc-remote` after connecting before any property changes or shooting commands will be accepted.
+
+See the auto-generated [API reference](/alpha-sdk-api/web-api/overview/) for full request/response schemas.
+
+## List Cameras
+
+`GET /api/cameras` — enumerate all cameras visible via USB and network.
+
+<Tabs>
+<TabItem label="curl">
+
+```bash
+curl http://localhost:8080/api/cameras
+```
+
+</TabItem>
+<TabItem label="Response">
+
+```json
+{
+  "success": true,
+  "message": "Camera discovery completed",
+  "cameras": [
+    {
+      "id": "D10F60149B0C",
+      "model": "ILCE-9M3",
+      "connectionType": "USB",
+      "connected": false
+    }
+  ]
+}
+```
+
+</TabItem>
+</Tabs>
+
+
+---
+
+## Connect Camera
+
+`POST /api/cameras/{cameraId}/connection` — establish a connection in the specified [mode](/alpha-sdk-api/web-api/overview/#connection-modes).
+
+Body fields:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `mode` | `remote` | `remote`, `remote-transfer`, or `contents` |
+| `reconnecting` | — | `on` or `off` — auto-reconnect on disconnection |
+| `username` | — | For network cameras |
+| `password` | — | For network cameras |
+
+<Tabs>
+<TabItem label="curl">
+
+```bash
+curl -X POST http://localhost:8080/api/cameras/D10F60149B0C/connection \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "remote"}'
+```
+
+</TabItem>
+<TabItem label="Response">
+
+```json
+{
+  "success": true,
+  "message": "Camera connected successfully in remote mode",
+  "camera": {
+    "connected": true,
+    "model": "ILCE-9M3",
+    "id": "D10F60149B0C"
+  }
+}
+```
+
+</TabItem>
+</Tabs>
+
+
+:::note
+After `POST /api/cameras/{cameraId}/connection` returns success, use `GET /api/cameras/{cameraId}/connection` if you want to confirm the active mode from `data.mode`.
+:::
+
+
+---
+
+## Connection Status
+
+`GET /api/cameras/{cameraId}/connection` — check whether a camera is currently connected.
+
+<Tabs>
+<TabItem label="curl">
+
+```bash
+curl http://localhost:8080/api/cameras/D10F60149B0C/connection
+```
+
+</TabItem>
+</Tabs>
+
+
+---
+
+## Disconnect Camera
+
+`DELETE /api/cameras/{cameraId}/connection` — disconnect a camera. Clears event callbacks and waits for clean disconnection.
+
+<Tabs>
+<TabItem label="curl">
+
+```bash
+curl -X DELETE http://localhost:8080/api/cameras/D10F60149B0C/connection
+```
+
+</TabItem>
+</Tabs>
+
+
+:::note
+For typed client calls, [generate a client](/alpha-sdk-api/sdk/overview/) from the OpenAPI specification.
+:::

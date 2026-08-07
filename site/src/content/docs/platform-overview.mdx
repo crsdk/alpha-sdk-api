@@ -1,0 +1,58 @@
+---
+title: "Platform overview"
+description: "A map of the developer stack — the HTTP server, generated clients, and MCP tooling."
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The Sony Developer Platform (unofficial) consists of the **Alpha Camera REST API** and supporting tooling, including the API playground and documentation MCP servers. Most developers should use the community-developed REST API, calling it over HTTP or through a client generated from the OpenAPI specification; Sony's official native SDKs are best if you need direct C\+\+ / C# integration to achieve best device performance. 
+
+## The stack
+
+| Layer | What it is | When to use it |
+| --- | --- | --- |
+| **Alpha Camera REST API** | A local HTTP and SSE server that wraps the native C\+\+ SDK. Built from source and run as the `CameraWebApp` binary | Cross-platform apps; multi-client setups; supervising the server from your own process |
+| **Generated clients** | Typed clients you generate from the OpenAPI specification, in whichever language you work in | Any application that would rather call typed methods than build URLs by hand |
+| **MCP Servers** | AI-assistant–consumable indexes of the SDK and Help Guide | Building with Claude, Cursor, or other AI assisted development tools |
+
+## Picking a layer
+
+<CardGrid>
+<LinkCard title="I want a typed client" href="/alpha-sdk-api/sdk/overview/" description="Generate one for your language directly from the OpenAPI specification." />
+
+  <LinkCard title="I just want to call HTTP" href="/alpha-sdk-api/web-api/overview/" description="Call the REST API directly from any language or tool that speaks HTTP." />
+
+  <LinkCard title="I'm building with AI assistants" href="/alpha-sdk-api/mcp-server/overview/" description="Configure the **MCP Servers** with your coding agent for SDK-accurate code and spec lookups." />
+</CardGrid>
+
+
+## Native Sony SDKs
+
+If you explicitly need direct native integration rather than the REST API, Sony also provides:
+
+- [Camera Remote SDK](/alpha-sdk-api/sdk/camera-remote-sdk/) — official C\+\+ / C# camera control SDK
+- [Camera Remote Command SDK](/alpha-sdk-api/sdk/camera-remote-command-sdk/) — lower-level PTP command SDK for specialized workflows
+
+## Connection modes
+
+Whichever SDK/API you use, the underlying camera connection uses one of three modes:
+
+| Mode | Capabilities |
+| --- | --- |
+| `remote` | Full shooting \+ settings control. Auto-transfers captured images to the host PC. |
+| `remote-transfer` | Full shooting \+ settings control. Explicit SD card file access (pull specific files on demand). |
+| `contents` | SD card browsing only — no shooting or settings. |
+
+See [Connection](/alpha-sdk-api/web-api/connection/) for the full workflow.
+
+## Priority key requirement
+
+Before the camera accepts any remote command, its **priority key** must be set to `pc-remote`. Sending a shoot or property change before this will silently fail on most bodies. Set it right after connecting:
+
+```bash
+curl -X PUT http://localhost:8080/api/cameras/{id}/priority-key \
+  -H "Content-Type: application/json" \
+  -d '{"setting": "pc-remote"}'
+```
+
+All three language clients expose this as `setPriorityKey({ cameraId, setting: "pc-remote" })` — call it right after `cameras.connect(...)` succeeds.

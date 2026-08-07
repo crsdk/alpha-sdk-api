@@ -1,0 +1,99 @@
+---
+title: "Contributing"
+description: "Set up a local build, add camera coverage, and get a change reviewed"
+---
+
+import { Steps, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Contributions happen in
+[crsdk/alpha-sdk-api](https://github.com/crsdk/alpha-sdk-api). The REST server,
+the OpenAPI specification and this documentation site all live in that one
+repository, so a change to an endpoint updates the implementation, the contract
+and the docs in the same commit.
+
+:::caution
+The Sony Camera Remote SDK cannot be redistributed. It is downloaded separately
+from Sony after accepting their licence, which is why no build script, package
+manager or CI job can fetch it for you.
+:::
+
+## Local setup
+
+<Steps>
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/crsdk/alpha-sdk-api.git
+   ```
+
+2. **Download the Camera Remote SDK from Sony**
+
+   Accept the licence on Sony's download page, then place the files as
+   described in `docs/SDK_SETUP.md`. The helper `scripts/extract-sdk.sh`
+   unpacks a download into the right layout.
+
+3. **Install build prerequisites**
+
+   CMake and a C++ toolchain. JSON is vendored in
+   `api/server/third_party/jsoncpp`, and OpenSSL was deliberately removed, so
+   there are no other runtime dependencies to install.
+
+4. **Build the server**
+
+   ```bash
+   cd api/server && mkdir -p build && cd build
+   cmake -DCMAKE_BUILD_TYPE=Release ..
+   cmake --build . --config Release
+   ```
+
+5. **Run it**
+
+   ```bash
+   ./CameraWebApp
+   ```
+
+   Then confirm it is alive:
+
+   ```bash
+   curl http://localhost:8080/api/server/status
+   ```
+
+</Steps>
+
+## What you must not commit
+
+`shared/core/` holds Sony's **stock** SDK sample helpers, fetched locally and
+not tracked here. Never edit them. The REST server's own device logic is MIT
+code under `api/server/src/device/`, and that is where changes belong.
+
+CI enforces this on the public repository: a job fails the build if any SDK
+source, SDK binary, or compiled artefact is committed.
+
+## Pull request checklist
+
+- No Sony SDK files, SDK binaries, build folders, camera media or local
+  credentials are added.
+- The OpenAPI contract and the implementation agree — a new endpoint is not
+  done until `api/openapi.yaml` describes it.
+- Unit and static checks pass; relevant end-to-end checks from `docs/TESTING.md`
+  were run, or skipped with a stated reason.
+- Hardware-dependent behaviour lists **camera model, firmware, connection mode
+  and SDK version**. "Works on my camera" is not a test note.
+- Any model-specific claim is backed by the SDK documentation or the camera
+  help guides — not inferred from one body.
+
+## Where to go next
+
+<CardGrid>
+  <LinkCard
+    title="Adding camera coverage"
+    href="/alpha-sdk-api/contributing/adding-endpoints/"
+    description="The two shapes a new feature takes, and the files each one touches."
+  />
+  <LinkCard
+    title="Agent skills"
+    href="/alpha-sdk-api/contributing/agent-skills/"
+    description="Repository skills that drive research, implementation, testing and publishing."
+  />
+</CardGrid>

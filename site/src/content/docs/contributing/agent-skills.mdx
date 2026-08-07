@@ -1,0 +1,71 @@
+---
+title: "Agent skills"
+description: "Repository skills that drive research, implementation, testing and publishing for coding agents"
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+The repository ships four agent skills under `skills/`. They encode the parts of
+this project that are easy to get wrong and expensive to discover — which SDK
+call implements a feature, what must never be committed, what counts as a real
+test note.
+
+An agent that loads them contributes the same way a person following
+[Adding camera coverage](/alpha-sdk-api/contributing/adding-endpoints/) would.
+They are plain Markdown, so they are equally readable if you are doing the work
+yourself.
+
+| Skill | Use it when |
+| --- | --- |
+| `alpha-sdk-doc-research` | Before implementing anything — research the SDK, camera help guides and Web API docs through the MCP servers |
+| `alpha-sdk-add-api` | Implementing a missing endpoint, property or action mapping |
+| `alpha-sdk-test` | Planning and running unit and end-to-end validation, including camera-backed `curl` checks |
+| `alpha-sdk-publish` | Checking CI and public-repository readiness before pushing |
+
+## The order matters
+
+Research first. The most common failure is implementing against a guess about
+what an SDK call does, then discovering the real semantics during hardware
+testing — by which point the endpoint shape is already wrong and the OpenAPI
+contract has been written around it.
+
+`alpha-sdk-doc-research` exists to front-load that: it queries the indexed SDK
+documentation and camera help guides so the design starts from what the SDK
+actually provides, and from which bodies actually support it.
+
+## Documentation MCP servers
+
+The research skill relies on two MCP servers that index the SDK reference and
+the camera help guides. Setting them up is covered in
+[MCP Server setup](/alpha-sdk-api/mcp-server/setup/), and `docs/MCP_SERVERS.md`
+carries the repository-side configuration.
+
+:::note
+A third server previously served this site's own documentation. It was provided
+by the docs host and disappeared with it; the two SDK and help-guide servers are
+hosted separately and are unaffected.
+:::
+
+## Publishing safety
+
+`alpha-sdk-publish` exists because this repository has an unusual constraint:
+Sony's SDK cannot be redistributed, so a routine commit can create a licensing
+problem rather than a merge conflict.
+
+The skill checks that no SDK source, binary, build folder, camera media or local
+credential is staged before a public push. CI enforces the same rule, but
+finding out locally is considerably better than finding out from a failed job on
+a public repository.
+
+<CardGrid>
+  <LinkCard
+    title="Back to Contributing"
+    href="/alpha-sdk-api/contributing/"
+    description="Local setup, what not to commit, and the pull request checklist."
+  />
+  <LinkCard
+    title="MCP Server setup"
+    href="/alpha-sdk-api/mcp-server/setup/"
+    description="Connect Claude or Cursor to the SDK and help-guide indexes."
+  />
+</CardGrid>
