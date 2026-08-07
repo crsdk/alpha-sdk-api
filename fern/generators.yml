@@ -36,6 +36,9 @@ groups:
           # AlphaSDK types namespace, AlphaSDKEnvironment/Error) — without this
           # Fern derives names from the org ("CrsdkApi*"), breaking consumers.
           namespaceExport: AlphaSDK
+          # 0.3.x shipped the serde layer (`export * as serialization`); keep it
+          # so that public export is not removed.
+          noSerdeLayer: false
 
   # -------- Python: publishes to PyPI as alpha-sdk-client --------
   python-sdk:
