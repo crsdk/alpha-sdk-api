@@ -39,7 +39,9 @@ groups:
         version: 5.26.0
         output:
           location: local-file-system
-          path: ../generated/python
+          # Nest under src/alpha_sdk_client so the vendored pyproject.toml
+          # (fern/packaging/python) can build a correctly-named wheel.
+          path: ../generated/python/src/alpha_sdk_client
         config:
           package_name: alpha_sdk_client
           client_class_name: AlphaSDKClient

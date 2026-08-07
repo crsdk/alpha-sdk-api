@@ -1,12 +1,13 @@
 name: SDK Preview
 
 # Runs on every PR that touches the API contract or the Fern config.
-# Validates the spec and regenerates both clients locally so reviewers can see
-# the exact SDK diff a spec change produces — the core DevEx win.
+# Validates the spec, regenerates both clients, assembles them into full
+# packages with the vendored manifests, and BUILDS them — so reviewers see the
+# exact SDK diff and CI proves the packages compile before any release.
 #
-# Fully credential-free: `fern generate --group <g> --local` runs the generator Docker
-# images on the runner (Docker ships with ubuntu-latest). No FERN_TOKEN, no
-# npm/PyPI secrets, no publishing. Publishing happens only on a tag, in
+# Fully credential-free: `fern generate --group <g> --local` runs the generator
+# Docker images on the runner (Docker ships with ubuntu-latest). No FERN_TOKEN,
+# no npm/PyPI secrets, no publishing. Publishing happens only on a tag, in
 # sdk-publish.yml.
 
 on:
@@ -22,25 +23,47 @@ permissions:
 
 jobs:
   preview:
-    name: Validate spec and preview generated SDKs
+    name: Validate, generate, and build SDKs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Validate the API contract
         run: npx fern-api@5.91.0 check
 
-      - name: Generate TypeScript client
-        run: npx fern-api@5.91.0 generate --group ts-sdk --local --log-level debug
+      - name: Generate clients
+        run: |
+          npx fern-api@5.91.0 generate --group ts-sdk --local
+          npx fern-api@5.91.0 generate --group python-sdk --local
 
-      - name: Generate Python client
-        run: npx fern-api@5.91.0 generate --group python-sdk --local --log-level debug
+      - name: Assemble packages (vendored manifests + LICENSE)
+        run: |
+          cp fern/packaging/typescript/* generated/typescript/
+          cp LICENSE generated/typescript/
+          cp fern/packaging/python/pyproject.toml generated/python/
+          cp LICENSE generated/python/
+          # pyproject readme points at README.md; surface the generated one.
+          cp generated/python/src/alpha_sdk_client/README.md generated/python/README.md 2>/dev/null || echo "# alpha-sdk-client" > generated/python/README.md
 
-      - name: Upload generated SDKs for review
+      - name: Build TypeScript package
+        working-directory: generated/typescript
+        run: |
+          npm install
+          npm run build
+
+      - name: Build Python package
+        working-directory: generated/python
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Upload built SDKs for review
         uses: actions/upload-artifact@v4
         with:
           name: generated-sdks
@@ -53,6 +76,6 @@ jobs:
           {
             echo "### SDK preview"
             echo ""
-            echo "Generated from \`api/openapi.yaml\` with the pinned Fern config."
-            echo "Download the **generated-sdks** artifact above to inspect the TypeScript and Python output this PR would ship."
+            echo "Generated from \`api/openapi.yaml\`, assembled with the vendored packaging manifests, and built."
+            echo "Download the **generated-sdks** artifact to inspect the TypeScript and Python packages this PR would ship."
           } >> "$GITHUB_STEP_SUMMARY"

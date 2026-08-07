@@ -77,11 +77,31 @@ This is intentionally left out of `sdk-publish.yml` until the SDK repos are
 restructured (they currently hold example apps); wire it as a follow-up job or
 have those repos pull the spec and self-generate.
 
+## Packaging manifests
+
+Fern's `local-file-system` output emits **source only** — no `package.json`,
+`tsconfig`, or `pyproject.toml` (the same reason the original SDK repos kept
+these hand-authored and `.fernignore`-protected). They are vendored here and
+copied onto the generated source in CI before build/publish:
+
+- `fern/packaging/typescript/` — `package.json` (name `@alpha-sdk/client`) + tsconfigs
+- `fern/packaging/python/` — `pyproject.toml` (name `alpha-sdk-client`)
+
+The version field is a `0.0.0` placeholder; CI stamps it from the release tag.
+The Python generator output is nested under `generated/python/src/alpha_sdk_client`
+so the vendored `pyproject.toml` builds a correctly-named wheel.
+
 ## Reproduce locally
 
 ```bash
 npx fern-api@5.91.0 check
 npx fern-api@5.91.0 generate --group ts-sdk --local       # needs Docker
 npx fern-api@5.91.0 generate --group python-sdk --local
-ls generated/typescript generated/python
+# assemble + build the TS package
+cp fern/packaging/typescript/* LICENSE generated/typescript/
+( cd generated/typescript && npm install && npm run build )
+# assemble + build the Python package
+cp fern/packaging/python/pyproject.toml LICENSE generated/python/
+cp generated/python/src/alpha_sdk_client/README.md generated/python/README.md
+( cd generated/python && python -m build )
 ```

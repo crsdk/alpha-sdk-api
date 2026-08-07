@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Generate only; skip publishing'
+        description: 'Generate + build only; skip publishing'
         type: boolean
         default: true
 
@@ -35,13 +35,16 @@ permissions:
 
 jobs:
   generate:
-    name: Generate clients
+    name: Generate + build clients
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Derive SDK version from tag
         id: ver
         run: |
@@ -54,10 +57,25 @@ jobs:
           fi
       - name: Validate the API contract
         run: npx fern-api@5.91.0 check
-      - name: Generate TypeScript client
-        run: npx fern-api@5.91.0 generate --group ts-sdk --local --version "${{ steps.ver.outputs.version }}"
-      - name: Generate Python client
-        run: npx fern-api@5.91.0 generate --group python-sdk --local --version "${{ steps.ver.outputs.version }}"
+      - name: Generate clients
+        run: |
+          npx fern-api@5.91.0 generate --group ts-sdk --local
+          npx fern-api@5.91.0 generate --group python-sdk --local
+      - name: Assemble + version-stamp packages
+        env:
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          cp fern/packaging/typescript/* generated/typescript/
+          cp LICENSE generated/typescript/
+          cp fern/packaging/python/pyproject.toml generated/python/
+          cp LICENSE generated/python/
+          cp generated/python/src/alpha_sdk_client/README.md generated/python/README.md 2>/dev/null || echo "# alpha-sdk-client" > generated/python/README.md
+          ( cd generated/typescript && npm pkg set version="$V" )
+          sed -i "s/^version = .*/version = \"$V\"/" generated/python/pyproject.toml
+      - name: Build packages
+        run: |
+          ( cd generated/typescript && npm install && npm run build )
+          ( cd generated/python && python -m pip install --upgrade build && python -m build )
       - uses: actions/upload-artifact@v4
         with:
           name: generated-sdks
@@ -83,20 +101,13 @@ jobs:
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
-      - name: Build and publish
+      - name: Publish
         working-directory: generated/typescript
         run: |
-          # Pin the published identity deterministically, independent of what the
-          # generator names the package.
-          npm pkg set name='@alpha-sdk/client'
-          npm pkg set version='${{ needs.generate.outputs.version }}'
-          # Fern output has no committed lockfile, so use install, not ci.
-          npm install
-          npm run build --if-present
           # npm >= 11.5 performs OIDC Trusted Publishing automatically when the
           # package has a Trusted Publisher configured — no NODE_AUTH_TOKEN.
           npm install -g npm@latest
-          npm publish --access public
+          npm publish
 
   publish-python:
     name: Publish alpha-sdk-client to PyPI
@@ -113,14 +124,6 @@ jobs:
         with:
           name: generated-sdks
           path: generated/
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Build sdist + wheel
-        working-directory: generated/python
-        run: |
-          python -m pip install --upgrade build
-          python -m build
       - name: Publish to PyPI (OIDC, no token)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
