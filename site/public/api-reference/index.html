@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Alpha Camera REST API — Reference</title>
+    <meta
+      name="description"
+      content="Reference and request console for the Alpha Camera REST API. Requests run from your browser against the server on your own machine."
+    />
+    <link rel="icon" href="../assets/favicon.png" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
+      /* Shown only if the bundle fails to load; Scalar replaces #app on boot. */
+      #fallback {
+        font:
+          16px/1.6 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        max-width: 42rem;
+        margin: 4rem auto;
+        padding: 0 1.5rem;
+        color: #1a1a1a;
+      }
+      #fallback code {
+        background: #f2f2f2;
+        padding: 0.15em 0.4em;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <noscript>
+        <div id="fallback">
+          <h1>Alpha Camera REST API</h1>
+          <p>
+            This reference needs JavaScript to render. The underlying
+            specification is plain YAML and is readable directly:
+            <a href="./openapi.yaml">openapi.yaml</a>.
+          </p>
+        </div>
+      </noscript>
+    </div>
+
+    <!--
+      Vendored, not loaded from a CDN. See site/assets/scalar/VENDORED.md for
+      provenance and the update procedure. A third-party CDN must not be a
+      runtime dependency of this site.
+    -->
+    <script src="../assets/scalar/standalone.js"></script>
+    <script>
+      Scalar.createApiReference('#app', {
+        url: './openapi.yaml',
+
+        /*
+         * CRITICAL — do not remove.
+         *
+         * Scalar's request console defaults to proxying through
+         * https://proxy.scalar.com. That default is wrong for this API in two
+         * separate ways:
+         *
+         *   1. It cannot work. The server runs on the reader's own machine at
+         *      http://localhost:8080. Scalar's proxy resolves localhost on
+         *      Scalar's infrastructure, not the reader's, so every request
+         *      would fail or hit an unrelated host.
+         *
+         *   2. It would be a privacy regression. Proxying sends the reader's
+         *      request — including any access-authentication credentials they
+         *      typed in — to a third party that has no reason to see it.
+         *
+         * An empty string disables the proxy so the browser calls localhost
+         * directly. This works because the server already sends permissive CORS
+         * headers (CameraWebServer.cpp) and browsers exempt http://localhost
+         * from mixed-content blocking, so this HTTPS page may call it.
+         *
+         * This matches the behaviour the Mintlify site had via
+         * `"api": {"playground": {"proxy": false}}` in docs.json.
+         */
+        proxyUrl: '',
+
+        /*
+         * Scalar's default theme pulls webfonts from https://fonts.scalar.com.
+         * Same objection as the CDN: it makes an outside host a runtime
+         * dependency of a page nobody is maintaining. System fonts instead.
+         */
+        withDefaultFonts: false,
+
+        // Readers should be able to grab the spec they are reading.
+        hideDownloadButton: false,
+
+        // The prose docs use a dark scheme built from Scalar's own palette, so
+        // default this side to dark too — otherwise following the sidebar link
+        // flips the reader from dark to light mid-session. The in-page toggle
+        // still works.
+        darkMode: true,
+
+        // Scalar's SaaS toolbar (Configure / Share / Deploy) is localhost-only
+        // by default. Pinned off so a future default change cannot surface
+        // upsell controls on a published Sony-branded page with no maintainer.
+        showDeveloperTools: 'never',
+      });
+    </script>
+  </body>
+</html>
