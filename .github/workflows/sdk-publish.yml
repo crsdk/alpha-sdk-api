@@ -55,9 +55,9 @@ jobs:
       - name: Validate the API contract
         run: npx fern-api@5.91.0 check
       - name: Generate TypeScript client
-        run: npx fern-api@5.91.0 generate --group ts-sdk --version "${{ steps.ver.outputs.version }}"
+        run: npx fern-api@5.91.0 generate --group ts-sdk --local --version "${{ steps.ver.outputs.version }}"
       - name: Generate Python client
-        run: npx fern-api@5.91.0 generate --group python-sdk --version "${{ steps.ver.outputs.version }}"
+        run: npx fern-api@5.91.0 generate --group python-sdk --local --version "${{ steps.ver.outputs.version }}"
       - uses: actions/upload-artifact@v4
         with:
           name: generated-sdks

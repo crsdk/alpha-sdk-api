@@ -4,7 +4,7 @@
 # (@alpha-sdk/client on npm, alpha-sdk-client on PyPI) are generated from that
 # spec and never hand-edited.
 #
-# Generators run LOCALLY via Docker (`fern generate --group <g>`):
+# Generators run LOCALLY via Docker (`fern generate --group <g> --local`):
 #   - no Fern account, no FERN_TOKEN, no hosted Fern service
 #   - generator images are public pulls
 # This is the same path that produced the currently-published packages

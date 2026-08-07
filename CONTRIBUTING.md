@@ -30,8 +30,8 @@ To reproduce a generation locally:
 
 ```bash
 npx fern-api@5.91.0 check
-npx fern-api@5.91.0 generate --group ts-sdk
-npx fern-api@5.91.0 generate --group python-sdk
+npx fern-api@5.91.0 generate --group ts-sdk --local
+npx fern-api@5.91.0 generate --group python-sdk --local
 ```
 
 Full details, the release runbook, and one-time owner setup are in

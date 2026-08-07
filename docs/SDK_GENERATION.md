@@ -81,7 +81,7 @@ have those repos pull the spec and self-generate.
 
 ```bash
 npx fern-api@5.91.0 check
-npx fern-api@5.91.0 generate --group ts-sdk       # needs Docker
-npx fern-api@5.91.0 generate --group python-sdk
+npx fern-api@5.91.0 generate --group ts-sdk --local       # needs Docker
+npx fern-api@5.91.0 generate --group python-sdk --local
 ls generated/typescript generated/python
 ```

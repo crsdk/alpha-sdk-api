@@ -4,7 +4,7 @@ name: SDK Preview
 # Validates the spec and regenerates both clients locally so reviewers can see
 # the exact SDK diff a spec change produces — the core DevEx win.
 #
-# Fully credential-free: `fern generate --group <g>` runs the generator Docker
+# Fully credential-free: `fern generate --group <g> --local` runs the generator Docker
 # images on the runner (Docker ships with ubuntu-latest). No FERN_TOKEN, no
 # npm/PyPI secrets, no publishing. Publishing happens only on a tag, in
 # sdk-publish.yml.
@@ -35,10 +35,10 @@ jobs:
         run: npx fern-api@5.91.0 check
 
       - name: Generate TypeScript client
-        run: npx fern-api@5.91.0 generate --group ts-sdk --log-level debug
+        run: npx fern-api@5.91.0 generate --group ts-sdk --local --log-level debug
 
       - name: Generate Python client
-        run: npx fern-api@5.91.0 generate --group python-sdk --log-level debug
+        run: npx fern-api@5.91.0 generate --group python-sdk --local --log-level debug
 
       - name: Upload generated SDKs for review
         uses: actions/upload-artifact@v4
