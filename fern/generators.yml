@@ -31,6 +31,11 @@ groups:
         output:
           location: local-file-system
           path: ../generated/typescript
+        config:
+          # Preserve the published 0.3.x public names (AlphaSDKClient, the
+          # AlphaSDK types namespace, AlphaSDKEnvironment/Error) — without this
+          # Fern derives names from the org ("CrsdkApi*"), breaking consumers.
+          namespaceExport: AlphaSDK
 
   # -------- Python: publishes to PyPI as alpha-sdk-client --------
   python-sdk:
