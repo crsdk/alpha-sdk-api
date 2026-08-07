@@ -1,0 +1,58 @@
+name: SDK Preview
+
+# Runs on every PR that touches the API contract or the Fern config.
+# Validates the spec and regenerates both clients locally so reviewers can see
+# the exact SDK diff a spec change produces — the core DevEx win.
+#
+# Fully credential-free: `fern generate --group <g>` runs the generator Docker
+# images on the runner (Docker ships with ubuntu-latest). No FERN_TOKEN, no
+# npm/PyPI secrets, no publishing. Publishing happens only on a tag, in
+# sdk-publish.yml.
+
+on:
+  pull_request:
+    paths:
+      - 'api/openapi.yaml'
+      - 'fern/**'
+      - '.github/workflows/sdk-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    name: Validate spec and preview generated SDKs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate the API contract
+        run: npx fern-api@5.91.0 check
+
+      - name: Generate TypeScript client
+        run: npx fern-api@5.91.0 generate --group ts-sdk --log-level debug
+
+      - name: Generate Python client
+        run: npx fern-api@5.91.0 generate --group python-sdk --log-level debug
+
+      - name: Upload generated SDKs for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-sdks
+          path: generated/
+          retention-days: 14
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### SDK preview"
+            echo ""
+            echo "Generated from \`api/openapi.yaml\` with the pinned Fern config."
+            echo "Download the **generated-sdks** artifact above to inspect the TypeScript and Python output this PR would ship."
+          } >> "$GITHUB_STEP_SUMMARY"
