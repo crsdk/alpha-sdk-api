@@ -115,3 +115,7 @@ site/.astro/
 /generated/
 /fern/.definition/
 /.fern/
+
+# crsdk developer CLI (built in CI / installed locally)
+cli/node_modules/
+cli/dist/
