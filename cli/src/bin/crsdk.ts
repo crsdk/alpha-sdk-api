@@ -8,7 +8,7 @@
 // never fetched as a prebuilt binary.
 // =============================================================================
 
-import { existsSync } from 'node:fs';
+import { existsSync, statSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { colors, symbols } from '../lib/theme.js';
@@ -53,6 +53,39 @@ function hasTool(cmd: string, args: string[] = ['--version']): boolean {
   return r.status === 0;
 }
 
+function git(root: string, args: string[]): { ok: boolean; out: string } {
+  const r = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  return { ok: r.status === 0, out: (r.stdout ?? '').trim() };
+}
+
+/** Commits the local clone is behind its upstream (cached remote-tracking, no fetch). null if unknown. */
+function commitsBehind(root: string): number | null {
+  const r = git(root, ['rev-list', '--count', 'HEAD..@{u}']);
+  if (!r.ok) return null;
+  const n = parseInt(r.out, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Newest mtime (ms) among server source files — to tell if the build is stale. */
+function newestServerSourceMtime(root: string): number {
+  const exts = ['.cpp', '.cc', '.h', '.hpp', '.cmake', 'CMakeLists.txt'];
+  let newest = 0;
+  const walk = (d: string): void => {
+    let entries: string[];
+    try { entries = readdirSync(d); } catch { return; }
+    for (const e of entries) {
+      if (e === 'build' || e === 'node_modules' || e === '.git') continue;
+      const p = join(d, e);
+      let st;
+      try { st = statSync(p); } catch { continue; }
+      if (st.isDirectory()) walk(p);
+      else if (exts.some((x) => e === x || e.endsWith(x))) newest = Math.max(newest, st.mtimeMs);
+    }
+  };
+  walk(join(root, 'api', 'server'));
+  return newest;
+}
+
 // --- commands ----------------------------------------------------------------
 
 async function doctor(): Promise<void> {
@@ -83,6 +116,22 @@ async function doctor(): Promise<void> {
     const bin = serverBinary(root);
     await printCheck(bin ? 'pass' : 'warn', 'Server built', bin ?? 'not built — run "crsdk build"');
     bin ? passed++ : warnings++;
+
+    await printSection('Sync');
+    const behind = commitsBehind(root);
+    if (behind === null) {
+      await printKV('Upstream', colors.dim('no tracking branch'));
+    } else {
+      await printCheck(behind === 0 ? 'pass' : 'warn', 'Repo up to date',
+        behind === 0 ? 'current with upstream' : `${behind} commit(s) behind — run "crsdk upgrade"`);
+      behind === 0 ? passed++ : warnings++;
+    }
+    if (bin) {
+      const stale = newestServerSourceMtime(root) > statSync(bin).mtimeMs;
+      await printCheck(stale ? 'warn' : 'pass', 'Build fresh',
+        stale ? 'server source is newer than the binary — run "crsdk build"' : 'binary matches current source');
+      stale ? warnings++ : passed++;
+    }
   }
 
   printBlank();
@@ -116,6 +165,22 @@ async function build(argv: string[]): Promise<void> {
   printBlank();
   await printCheck('pass', 'Built', bin ?? buildDir);
   printCommand('crsdk start');
+}
+
+async function upgrade(): Promise<void> {
+  await printHeader('crsdk upgrade');
+  const root = findRepoRoot();
+  if (!root) { fail('Not inside the repo. Clone alpha-sdk-api and run from within it.'); return; }
+  if (!git(root, ['rev-parse', '--is-inside-work-tree']).ok) { fail('Not a git repository.'); return; }
+  if (git(root, ['status', '--porcelain']).out) {
+    fail('You have uncommitted changes — commit or stash them before upgrading.');
+    return;
+  }
+  console.log(`${symbols.arrow} Pulling latest from upstream…`);
+  const pull = spawnSync('git', ['pull', '--ff-only'], { cwd: root, stdio: 'inherit' });
+  if (pull.status !== 0) { fail('git pull failed (not a fast-forward?). Resolve manually, then re-run.'); return; }
+  console.log(`${symbols.arrow} Rebuilding the server…`);
+  await build([]); // recompiles CameraWebApp from the freshly-pulled source
 }
 
 async function start(argv: string[]): Promise<void> {
@@ -202,6 +267,7 @@ ${colors.white('SDK')}
 ${colors.white('SERVER')}
   ${a('doctor')}              Check toolchain, SDK, and build state
   ${a('build')} [--clean]     Compile the native REST server from source
+  ${a('upgrade')}             git pull the repo, then rebuild the server
   ${a('start')} [--port N]    Run the built server (default :8080)
   ${a('status')}              Check whether the server is running
   ${a('stop')}                Stop a running server
@@ -228,6 +294,7 @@ async function main(): Promise<void> {
     case 'versions': return versionsCmd();
     case 'use': return useCmd(rest);
     case 'build': return build(rest);
+    case 'upgrade': return upgrade();
     case 'start':
     case 'serve': return start(rest);
     case 'status': return status();
