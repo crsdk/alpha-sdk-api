@@ -19,6 +19,7 @@ import {
 import { getPackageVersion, getOsDescription } from '../lib/utils.js';
 import { mcpCommand } from '../lib/mcp.js';
 import { ServerManager } from '../lib/ServerManager.js';
+import { install, update, versions, use, sdkPresent } from '../lib/sdk.js';
 
 // --- repo discovery ----------------------------------------------------------
 
@@ -33,9 +34,9 @@ function findRepoRoot(): string | null {
   }
 }
 
-function sdkPresent(root: string): boolean {
-  // Best-effort: the SDK extraction helper populates shared/ (see SDK_SETUP.md).
-  return existsSync(join(root, 'shared', 'sdk')) || existsSync(join(root, 'shared', 'core', 'CameraDevice.h'));
+function flag(argv: string[], name: string): string | undefined {
+  const i = argv.indexOf(name);
+  return i >= 0 ? argv[i + 1] : undefined;
 }
 
 function serverBinary(root: string): string | null {
@@ -159,6 +160,26 @@ async function stop(): Promise<void> {
   }
 }
 
+async function installCmd(argv: string[], isUpdate = false): Promise<void> {
+  const root = findRepoRoot();
+  if (!root) { fail('Not inside the repo. Clone alpha-sdk-api and run from within it.'); return; }
+  const zip = flag(argv, '--zip');
+  if (!zip) { fail('Missing --zip <path-to-sony-sdk.zip>. Download the SDK from Sony — see docs/SDK_SETUP.md.'); return; }
+  await (isUpdate ? update : install)({ root, zip, platform: flag(argv, '--platform') });
+}
+
+async function versionsCmd(): Promise<void> {
+  const root = findRepoRoot();
+  if (!root) { fail('Not inside the repo.'); return; }
+  await versions(root);
+}
+
+async function useCmd(argv: string[]): Promise<void> {
+  const root = findRepoRoot();
+  if (!root) { fail('Not inside the repo.'); return; }
+  await use(root, argv[0]);
+}
+
 function fail(msg: string): void {
   console.log(`${symbols.cross} ${msg}`);
   process.exitCode = 1;
@@ -172,17 +193,27 @@ ${b('crsdk')} ${m('— Alpha Camera REST API developer CLI')}
 ${colors.white('USAGE')}
   crsdk <command> [options]
 
-${colors.white('COMMANDS')}
+${colors.white('SDK')}
+  ${a('install')} --zip <p>    Accept Sony's EULA and extract the SDK into shared/
+  ${a('update')} --zip <p>     Archive the current SDK, then install a new one
+  ${a('versions')}            List the active and archived SDK versions
+  ${a('use')} <name>          Swap an archived SDK version back into shared/
+
+${colors.white('SERVER')}
   ${a('doctor')}              Check toolchain, SDK, and build state
   ${a('build')} [--clean]     Compile the native REST server from source
   ${a('serve')} [--port N]    Run the built server (default :8080)
   ${a('status')}              Check whether the server is running
   ${a('stop')}                Stop a running server
+
+${colors.white('AGENTS')}
   ${a('mcp')} <sub>           Manage docs MCP servers (status | install)
+
+${colors.white('MISC')}
   ${a('help')}                Show this help
   ${a('version')}             Print the CLI version
 
-${colors.white('SETUP')}  ${m('Building the server needs Sony’s SDK — see docs/SDK_SETUP.md')}
+${m('First run:')}  crsdk install --zip <sony-sdk.zip>  →  crsdk build  →  crsdk serve
 `);
 }
 
@@ -192,6 +223,10 @@ async function main(): Promise<void> {
   const [cmd, ...rest] = process.argv.slice(2);
   switch (cmd) {
     case 'doctor': return doctor();
+    case 'install': return installCmd(rest);
+    case 'update': return installCmd(rest, true);
+    case 'versions': return versionsCmd();
+    case 'use': return useCmd(rest);
     case 'build': return build(rest);
     case 'serve':
     case 'start': return serve(rest);
