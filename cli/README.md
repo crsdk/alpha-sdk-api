@@ -1,42 +1,50 @@
-# @alpha-sdk/crsdk
+# crsdk — Alpha Camera REST API developer CLI
 
-Developer CLI for the [Alpha Camera REST API](https://crsdk.app) — the
-build-from-source companion. It checks your toolchain, builds the native REST
-server from this repo, runs it, and wires up docs MCP servers.
+The [Alpha Camera REST API](https://crsdk.app) build-from-source companion. It
+accepts Sony's SDK license and unpacks the SDK, checks your toolchain, builds the
+native REST server, runs it, and wires up docs MCP servers.
 
-The server is compiled from source (it links Sony's Camera Remote SDK, which you
-download separately — see [docs/SDK_SETUP.md](../docs/SDK_SETUP.md)). This CLI does
-**not** fetch prebuilt binaries.
-
-## Usage
-
-```bash
-crsdk doctor            # check toolchain, SDK, and build state
-crsdk build [--clean]   # compile the native REST server
-crsdk serve [--port N]  # run the built server (default :8080)
-crsdk status            # is the server running?
-crsdk stop              # stop a running server
-crsdk mcp <sub>         # manage docs MCP servers (status | install)
-```
-
-Run it from inside a clone of `alpha-sdk-api`, or point it at a built binary with
-`CRSDK_BINARY=/path/to/CameraWebApp`.
-
-## Typical first run
+**Bundled, not published.** This CLI ships *in the repo* — it is not an npm
+package, because every command needs the repo present. Run it with the
+repo-root wrapper, which builds the CLI on first use:
 
 ```bash
 git clone https://github.com/crsdk/alpha-sdk-api && cd alpha-sdk-api
-# place Sony's SDK per docs/SDK_SETUP.md
-crsdk doctor            # confirm the toolchain is ready
-crsdk build             # compile CameraWebApp
-crsdk serve             # http://localhost:8080
+./crsdk doctor
 ```
 
-Then drive it from the generated clients — [`@alpha-sdk/client`](https://www.npmjs.com/package/@alpha-sdk/client)
-(npm) or [`alpha-sdk-client`](https://pypi.org/project/alpha-sdk-client/) (PyPI).
+## First run
 
-## Roadmap
+```bash
+./crsdk doctor                                   # is my toolchain ready?
+./crsdk install --zip ~/Downloads/CrSDK_*.zip    # accept EULA + unpack the SDK
+./crsdk build                                    # compile the native server
+./crsdk start                                    # http://localhost:8080
+```
 
-SDK-lifecycle commands (`install --zip` to accept the EULA and extract the SDK,
-plus `versions`/`use` to archive and swap SDK releases) are being ported from the
-standalone `crsdk` tool. Until then, follow `docs/SDK_SETUP.md` to place the SDK.
+Then drive the camera from the generated clients —
+[`@alpha-sdk/client`](https://www.npmjs.com/package/@alpha-sdk/client) (npm) or
+[`alpha-sdk-client`](https://pypi.org/project/alpha-sdk-client/) (PyPI).
+
+## Commands
+
+```
+# SDK
+crsdk install --zip <p>    accept Sony's EULA and extract the SDK into shared/
+crsdk update --zip <p>     archive the current SDK, then install a new one
+crsdk versions             list active + archived SDK versions
+crsdk use <name>           swap an archived SDK version back in
+
+# Server
+crsdk doctor               check toolchain, SDK, and build state
+crsdk build [--clean]      compile the native REST server
+crsdk start [--port N]     run the built server (default :8080)   (alias: serve)
+crsdk status | stop        check / stop a running server
+
+# Agents
+crsdk mcp <sub>            manage docs MCP servers (status | install)
+```
+
+Point the server commands at a binary elsewhere with
+`CRSDK_BINARY=/path/to/CameraWebApp`. Building the server needs Sony's SDK —
+see [docs/SDK_SETUP.md](../docs/SDK_SETUP.md).

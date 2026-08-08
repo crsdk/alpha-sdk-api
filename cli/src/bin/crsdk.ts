@@ -115,11 +115,11 @@ async function build(argv: string[]): Promise<void> {
   const bin = serverBinary(root);
   printBlank();
   await printCheck('pass', 'Built', bin ?? buildDir);
-  printCommand('crsdk serve');
+  printCommand('crsdk start');
 }
 
-async function serve(argv: string[]): Promise<void> {
-  await printHeader('crsdk serve');
+async function start(argv: string[]): Promise<void> {
+  await printHeader('crsdk start');
   const root = findRepoRoot();
   const bin = root ? serverBinary(root) : null;
   if (!bin) { fail('Server not built. Run "crsdk build" first.'); return; }
@@ -202,7 +202,7 @@ ${colors.white('SDK')}
 ${colors.white('SERVER')}
   ${a('doctor')}              Check toolchain, SDK, and build state
   ${a('build')} [--clean]     Compile the native REST server from source
-  ${a('serve')} [--port N]    Run the built server (default :8080)
+  ${a('start')} [--port N]    Run the built server (default :8080)
   ${a('status')}              Check whether the server is running
   ${a('stop')}                Stop a running server
 
@@ -213,7 +213,7 @@ ${colors.white('MISC')}
   ${a('help')}                Show this help
   ${a('version')}             Print the CLI version
 
-${m('First run:')}  crsdk install --zip <sony-sdk.zip>  →  crsdk build  →  crsdk serve
+${m('First run:')}  crsdk install --zip <sony-sdk.zip>  →  crsdk build  →  crsdk start
 `);
 }
 
@@ -228,8 +228,8 @@ async function main(): Promise<void> {
     case 'versions': return versionsCmd();
     case 'use': return useCmd(rest);
     case 'build': return build(rest);
-    case 'serve':
-    case 'start': return serve(rest);
+    case 'start':
+    case 'serve': return start(rest);
     case 'status': return status();
     case 'stop': return stop();
     case 'mcp': return mcpCommand(rest[0], rest[1], rest[2]);
