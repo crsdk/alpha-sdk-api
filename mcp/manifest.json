@@ -15,7 +15,8 @@
       "args": ["${__dirname}/dist/server.js"],
       "env": {
         "ALPHA_BASE_URL": "${user_config.base_url}",
-        "ALPHA_MANAGE_BINARY": "off"
+        "ALPHA_MANAGE_BINARY": "on",
+        "CAMERA_SERVER_BINARY": "${__dirname}/server/CameraWebApp"
       }
     }
   },
@@ -23,7 +24,7 @@
     "base_url": {
       "type": "string",
       "title": "Camera server URL",
-      "description": "URL of the running Alpha Camera REST server. Start it separately with `crsdk start` (or run the CameraWebApp binary) before using these tools.",
+      "description": "URL the bundled Alpha Camera REST server binds. The bundle spawns and manages the server itself; override only to point at a server you run separately (then it adopts that one instead of spawning).",
       "default": "http://localhost:8080",
       "required": false
     }

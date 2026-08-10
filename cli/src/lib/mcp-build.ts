@@ -6,19 +6,21 @@
 //                      from api/openapi.yaml (flat tools only; committed)
 //   crsdk build:mcp  → bundle both halves (generated flat tools + hand-written
 //                      composites/SSE/session) from mcp/src → mcp/dist
-//   crsdk pack:mcp   → alpha-camera.mcpb  (+ the sony-camera-control skill note)
+//   crsdk pack:mcp   → alpha-camera.mcpb — self-contained: bundles the built
+//                      CameraWebApp + its Sony SDK / OpenCV runtime by default
+//                      (builds the binary first if needed)
 //
 // The single source of truth is api/openapi.yaml; the MCP codegen reads it via
 // mcp/'s "codegen" npm script (../api/openapi.yaml). These commands never touch
 // the hand-written composite core.
 // =============================================================================
 
-import { existsSync, rmSync, cpSync, mkdtempSync } from 'node:fs';
+import { existsSync, rmSync, cpSync, mkdtempSync, mkdirSync, readdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { colors, symbols } from './theme.js';
-import { printHeader, printCheck, printKV, printCommand, printBlank } from './components.js';
+import { printHeader, printCheck, printKV, printCommand, printBlank, printSection } from './components.js';
 
 function fail(msg: string): void {
   console.log(`${symbols.cross} ${msg}`);
@@ -48,6 +50,107 @@ function ensureDeps(dir: string): boolean {
   if (existsSync(join(dir, 'node_modules'))) return true;
   console.log(`${symbols.arrow} Installing MCP dependencies (first run)…`);
   return npm(dir, ['install']);
+}
+
+// --- native-binary bundling (pack:mcp) --------------------------------------
+
+/** Locate the built CameraWebApp under the repo, or null if it isn't built. */
+function serverBinary(root: string): string | null {
+  const name = process.platform === 'win32' ? 'CameraWebApp.exe' : 'CameraWebApp';
+  for (const rel of [['api', 'server', 'build', name], ['api', 'server', 'build', 'Release', name]]) {
+    const p = join(root, ...rel);
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
+/** Shared-object extension for the host, used to pick runtime libs to bundle. */
+function libExt(): string {
+  return process.platform === 'darwin' ? '.dylib' : process.platform === 'win32' ? '.dll' : '.so';
+}
+
+/** The platform's OpenCV runtime-lib directory inside shared/opencv, if present. */
+function opencvLibDir(root: string): string | null {
+  const candidates =
+    process.platform === 'darwin' ? [['Darwin', 'Release', 'macos', 'bin']] :
+    process.platform === 'win32' ? [['Windows', 'Release', 'x64', 'bin'], ['Windows', 'x64', 'vc17', 'bin']] :
+    [['Linux', 'Release', 'x64', 'lib'], ['Linux', 'Release', 'aarch64', 'lib']];
+  for (const rel of candidates) {
+    const p = join(root, 'shared', 'opencv', ...rel);
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
+/** Copy every shared lib (and any CrAdapter subdir) from src into dest, flat. */
+function copyLibs(src: string, dest: string): number {
+  if (!existsSync(src)) return 0;
+  mkdirSync(dest, { recursive: true });
+  let n = 0;
+  for (const e of readdirSync(src, { withFileTypes: true })) {
+    if (e.isDirectory() && e.name === 'CrAdapter') {
+      // The SDK loads its USB/PTP transport plugins from a CrAdapter/ dir that
+      // must sit next to libCr_Core — preserve the subdir verbatim.
+      cpSync(join(src, e.name), join(dest, e.name), { recursive: true });
+      n += readdirSync(join(src, e.name)).length;
+    } else if (e.isFile() && e.name.includes(libExt())) {
+      cpSync(join(src, e.name), join(dest, e.name));
+      n++;
+    }
+  }
+  return n;
+}
+
+/** macOS: strip quarantine + ad-hoc re-sign everything so Gatekeeper lets it run. */
+function codesignMac(dir: string): void {
+  if (process.platform !== 'darwin') return;
+  spawnSync('bash', ['-c',
+    `find '${dir}' -type f \\( -name '*.dylib' -o -perm +111 \\) ` +
+    `-exec xattr -dr com.apple.quarantine {} + 2>/dev/null; ` +
+    `find '${dir}' -type f \\( -name '*.dylib' -o -perm +111 \\) ` +
+    `-exec codesign --force --sign - {} + 2>/dev/null`,
+  ], { stdio: 'ignore' });
+}
+
+/**
+ * Bundle the native server + its Sony SDK / OpenCV runtime into <stage>/server/,
+ * building it first if it isn't built. Returns true on success.
+ *
+ * The MCP server spawns the binary with cwd = its own directory, and the binary
+ * carries an @executable_path rpath, so co-locating every dylib (plus the SDK's
+ * CrAdapter/) beside the executable makes the bundle self-resolving on any host.
+ */
+function bundleServerBinary(root: string, stage: string): boolean {
+  let bin = serverBinary(root);
+  if (!bin) {
+    // "always bundle, build if not built": drive the CLI's own build subcommand.
+    console.log(`${symbols.arrow} Server not built — building it first (crsdk build)…`);
+    const self = process.argv[1];
+    const r = spawnSync(process.execPath, [self, 'build'], { cwd: root, stdio: 'inherit' });
+    if (r.status !== 0) { fail('Build failed. Place the SDK ("crsdk install --zip") and retry.'); return false; }
+    bin = serverBinary(root);
+  }
+  if (!bin) { fail('Could not find CameraWebApp even after building.'); return false; }
+
+  const serverOut = join(stage, 'server');
+  mkdirSync(serverOut, { recursive: true });
+  const binOut = join(serverOut, process.platform === 'win32' ? 'CameraWebApp.exe' : 'CameraWebApp');
+  cpSync(bin, binOut);
+  chmodSync(binOut, 0o755);
+
+  const sdkLibs = copyLibs(join(root, 'shared', 'sdk', 'lib'), serverOut);
+  const cvDir = opencvLibDir(root);
+  const cvLibs = cvDir ? copyLibs(cvDir, serverOut) : 0;
+  if (sdkLibs === 0) {
+    fail('No Sony SDK runtime libs found under shared/sdk/lib — the bundled binary would not run. Place the SDK ("crsdk install --zip") and retry.');
+    return false;
+  }
+  codesignMac(serverOut);
+
+  printKV('Binary', `server/${process.platform === 'win32' ? 'CameraWebApp.exe' : 'CameraWebApp'}`);
+  printKV('SDK libs', `${sdkLibs} (incl. CrAdapter)`);
+  printKV('OpenCV libs', cvDir ? String(cvLibs) : colors.dim('not found — assuming static/linked'));
+  return true;
 }
 
 export async function genMcp(root: string | null): Promise<void> {
@@ -87,7 +190,7 @@ export async function packMcp(root: string | null): Promise<void> {
   if (!dir) return;
 
   const server = join(dir, 'dist', 'server.js');
-  if (!existsSync(server)) { fail('Server not built. Run "crsdk build:mcp" first.'); return; }
+  if (!existsSync(server)) { fail('MCP server not built. Run "crsdk build:mcp" first.'); return; }
   if (!existsSync(join(dir, 'manifest.json'))) { fail('mcp/manifest.json missing — cannot pack.'); return; }
 
   // Pack from a clean staging dir with a production-only install, so the .mcpb
@@ -100,6 +203,12 @@ export async function packMcp(root: string | null): Promise<void> {
       if (existsSync(src)) cpSync(src, join(stage, f));
     }
     cpSync(join(dir, 'dist'), join(stage, 'dist'), { recursive: true });
+
+    // Bundle the native server + its Sony SDK / OpenCV runtime by default, so
+    // the .mcpb is self-contained (Claude Desktop spawns it — no separate
+    // "crsdk start"). Builds the binary first if it isn't built yet.
+    await printSection('Bundling the camera server');
+    if (!bundleServerBinary(root!, stage)) return;
 
     console.log(`${symbols.arrow} Installing production dependencies…`);
     const install = existsSync(join(stage, 'package-lock.json'))
@@ -117,7 +226,12 @@ export async function packMcp(root: string | null): Promise<void> {
     await printCheck('pass', 'Bundle', out);
     // The Skill installs through a separate door — it cannot live inside the .mcpb.
     await printKV('Skill', colors.dim('mcp/skills/sony-camera-control (install separately)'));
-    await printKV('Server', colors.dim('run "crsdk start" — the CameraWebApp binary is not bundled'));
+    printBlank();
+    console.log(`  ${symbols.warn} ${colors.yellow('This bundle embeds Sony\'s Camera Remote SDK runtime (libCr_Core,')}`);
+    console.log(`     ${colors.yellow('CrAdapter, libusb/libssh2) + OpenCV. Distributing it redistributes')}`);
+    console.log(`     ${colors.yellow('Sony\'s proprietary runtime — you are responsible for complying with')}`);
+    console.log(`     ${colors.yellow('Sony\'s SDK EULA and each library\'s license, and (macOS) for signing/')}`);
+    console.log(`     ${colors.yellow('notarizing before you ship it. Fine for local install as-is.')}`);
   } finally {
     rmSync(stage, { recursive: true, force: true });
   }
