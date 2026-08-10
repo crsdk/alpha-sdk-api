@@ -74,3 +74,36 @@ jobs:
           npm install
           npm run build
           node dist/bin/crsdk.js version
+
+  mcp:
+    name: MCP server (codegen drift + build + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install MCP dependencies
+        working-directory: mcp
+        run: npm ci
+      # Regenerate the flat tools + types from the single spec (api/openapi.yaml)
+      # via the shipped CLI, then fail if the committed output drifts. The
+      # coverage gate in gen-tools.mjs runs inside gen:mcp and rejects any
+      # unclassified endpoint.
+      - name: Regenerate from the spec (crsdk gen:mcp)
+        run: ./crsdk gen:mcp
+      - name: Fail on codegen drift
+        run: |
+          git diff --exit-code -- \
+            mcp/src/api/schema.d.ts \
+            mcp/src/api/property-names.ts \
+            mcp/src/tools/generated.ts \
+          || { echo "::error::MCP generated files are stale — run 'crsdk gen:mcp' and commit."; exit 1; }
+      - name: Typecheck
+        working-directory: mcp
+        run: npm run typecheck
+      - name: Build (crsdk build:mcp)
+        run: ./crsdk build:mcp
+      - name: Unit tests
+        working-directory: mcp
+        run: npm test
