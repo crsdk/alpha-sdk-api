@@ -59,3 +59,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: Syntax-check extraction helper
         run: bash -n scripts/extract-sdk.sh
+
+  cli-build:
+    name: crsdk CLI (typecheck + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build the CLI
+        working-directory: cli
+        run: |
+          npm install
+          npm run build
+          node dist/bin/crsdk.js version

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# =============================================================================
+# crsdk — repo-root wrapper for the bundled developer CLI (cli/).
+#
+# The CLI ships in this repo; it is not published to npm (every command needs
+# the repo present). This shim builds it on first run, then forwards to it, so
+# a fresh clone can immediately run:  ./crsdk doctor
+# =============================================================================
+set -euo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+cli="$here/cli"
+entry="$cli/dist/bin/crsdk.js"
+
+if [ ! -f "$entry" ]; then
+  echo "Building the crsdk CLI (first run)…" >&2
+  ( cd "$cli" && npm install && npm run build ) >&2
+fi
+
+exec node "$entry" "$@"
