@@ -18,6 +18,7 @@ import {
 } from '../lib/components.js';
 import { getPackageVersion, getOsDescription } from '../lib/utils.js';
 import { mcpCommand } from '../lib/mcp.js';
+import { genMcp, buildMcp, packMcp } from '../lib/mcp-build.js';
 import { ServerManager } from '../lib/ServerManager.js';
 import { install, update, versions, use, sdkPresent } from '../lib/sdk.js';
 
@@ -275,6 +276,11 @@ ${colors.white('SERVER')}
 ${colors.white('AGENTS')}
   ${a('mcp')} <sub>           Manage docs MCP servers (status | install)
 
+${colors.white('MCP SERVER')} ${m('(camera-control bundle, from mcp/)')}
+  ${a('gen:mcp')}             Regenerate the flat tools from api/openapi.yaml
+  ${a('build:mcp')}           Compile mcp/src → mcp/dist
+  ${a('pack:mcp')}            Build alpha-camera.mcpb for Claude Desktop
+
 ${colors.white('MISC')}
   ${a('help')}                Show this help
   ${a('version')}             Print the CLI version
@@ -300,6 +306,9 @@ async function main(): Promise<void> {
     case 'status': return status();
     case 'stop': return stop();
     case 'mcp': return mcpCommand(rest[0], rest[1], rest[2]);
+    case 'gen:mcp': return genMcp(findRepoRoot());
+    case 'build:mcp': return buildMcp(findRepoRoot());
+    case 'pack:mcp': return packMcp(findRepoRoot());
     case 'version':
     case '--version':
     case '-v': console.log(getPackageVersion()); return;
