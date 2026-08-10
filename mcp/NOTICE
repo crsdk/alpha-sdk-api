@@ -1,0 +1,29 @@
+alpha-mcp-server
+Copyright (c) 2026 Jordan Lee
+
+This product is licensed under the MIT License; see LICENSE.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+Alpha Camera REST API contract (spec/openapi.yaml)
+--------------------------------------------------
+A vendored copy of `api/openapi.yaml` from https://github.com/crsdk/alpha-sdk-api,
+Copyright (c) 2026 Alpha Camera REST API contributors, licensed under the MIT
+License. See spec/README.md for the pinned upstream revision. The files
+src/api/schema.d.ts and src/api/property-names.ts are generated from it.
+
+Sony Camera Remote SDK
+----------------------
+This project contains no Sony code and redistributes no Sony binaries.
+
+It does, however, drive a `CameraWebApp` server process that links against the
+Sony Camera Remote SDK. That binary is built by the user from the alpha-sdk-api
+sources, and the Sony SDK libraries it links (libCr_Core, libCr_PTP_IP,
+libCr_PTP_USB and related components) are obtained directly from Sony and remain
+subject to the Sony Camera Remote SDK License Agreement — they are licensed, not
+sold, and are not redistributable.
+
+Anyone building or running the camera server must obtain the Sony SDK themselves
+and accept Sony's licence terms.

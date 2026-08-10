@@ -1,0 +1,19 @@
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Packaged bundle (built via "crsdk pack:mcp")
+*.mcpb
+
+# Runtime scratch
+*.log
+captures/
+snapshots/
+DSC*.JPG
+.DS_Store
+ts_smoke.mjs
+
+# Harness / workflow artifacts
+.cpa-workflow-artifacts/
+.claude/

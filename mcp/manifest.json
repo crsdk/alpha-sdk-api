@@ -1,0 +1,33 @@
+{
+  "manifest_version": "0.2",
+  "name": "alpha-camera",
+  "display_name": "Alpha Camera Control",
+  "version": "0.2.0",
+  "description": "Control a physically-connected Sony Alpha camera in natural language — connect, adjust settings, shoot, and review captured frames.",
+  "long_description": "A stateful MCP server that wraps the Alpha Camera REST API (Sony Camera Remote SDK over USB). It holds one camera session so you can say things like \"read my ISO\", \"shoot and show me the frame\", or \"set up for a bracket\". Requires the Alpha Camera REST server (CameraWebApp) running locally and a supported Sony camera connected over USB.",
+  "author": { "name": "Alpha Camera" },
+  "license": "MIT",
+  "server": {
+    "type": "node",
+    "entry_point": "dist/server.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/server.js"],
+      "env": {
+        "ALPHA_BASE_URL": "${user_config.base_url}",
+        "ALPHA_MANAGE_BINARY": "on",
+        "CAMERA_SERVER_BINARY": "${__dirname}/server/CameraWebApp"
+      }
+    }
+  },
+  "user_config": {
+    "base_url": {
+      "type": "string",
+      "title": "Camera server URL",
+      "description": "URL the bundled Alpha Camera REST server binds. The bundle spawns and manages the server itself; override only to point at a server you run separately (then it adopts that one instead of spawning).",
+      "default": "http://localhost:8080",
+      "required": false
+    }
+  },
+  "keywords": ["sony", "alpha", "camera", "photography", "tethering", "rest"]
+}

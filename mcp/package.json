@@ -1,0 +1,54 @@
+{
+  "name": "alpha-mcp-server",
+  "version": "0.2.0",
+  "description": "MCP server wrapping the Alpha Camera REST API for operator-driven Sony camera control from Claude Desktop.",
+  "type": "module",
+  "bin": {
+    "alpha-mcp-server": "dist/server.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "codegen": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts && node scripts/gen-property-names.mjs && node scripts/gen-tools.mjs",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "openapi-fetch": "^0.17.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "openapi-typescript": "^7.13.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crsdk/alpha-mcp-server.git"
+  },
+  "homepage": "https://github.com/crsdk/alpha-mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/crsdk/alpha-mcp-server/issues"
+  },
+  "author": "Jordan Lee",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "sony",
+    "camera",
+    "alpha",
+    "openapi"
+  ]
+}
