@@ -1,0 +1,119 @@
+---
+title: "Camera Control"
+description: "Operate a physically-connected Sony Alpha camera from Claude Desktop through the Alpha Camera MCP server"
+---
+
+import { LinkCard, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+:::note
+This is different from the two documentation servers on the [Overview](/alpha-sdk-api/mcp-server/overview/) page. Those are hosted knowledge bases you query for *research*. The **Camera Control** server runs on your machine and actually **operates a connected camera** — read settings, change ISO/aperture/shutter, shoot, and review the frame, all in natural language.
+:::
+
+## What it is
+
+The **Alpha Camera MCP server** is a stateful [Model Context Protocol](https://modelcontextprotocol.io) server that wraps the Alpha Camera REST API. It holds one camera session so you can say things like *"read my ISO"*, *"shoot and show me the frame"*, or *"set up for a 3-shot bracket"* and it drives the camera over USB.
+
+It ships as an `.mcpb` bundle you build from this repo and install into Claude Desktop. The bundle is **self-contained**: it embeds the native `CameraWebApp` REST server, so Claude Desktop launches everything itself — there is no separate server to start.
+
+## Prerequisites
+
+<Steps>
+
+1. **Clone the repo and place the SDK.** The camera server is built from source — the Sony Camera Remote SDK is never redistributed. See [SDK setup](/alpha-sdk-api/sdk/camera-remote-sdk/).
+
+   ```bash
+   git clone https://github.com/crsdk/alpha-sdk-api.git
+   cd alpha-sdk-api
+   ./crsdk install --zip <sony-camera-remote-sdk.zip>
+   ```
+
+2. **A supported Sony Alpha camera** connected over USB, set to **PC Remote** in the camera's USB connection menu.
+
+3. **Node.js 20+** and a C++ toolchain + CMake (run `./crsdk doctor` to check).
+
+</Steps>
+
+## Build the bundle
+
+The `crsdk` CLI builds the whole thing. Each step feeds the next:
+
+<Steps>
+
+1. **Regenerate the tools** from the OpenAPI spec (safe to run anytime — the generated tools are committed):
+
+   ```bash
+   ./crsdk gen:mcp
+   ```
+
+2. **Compile** the MCP server (`mcp/src` → `mcp/dist`):
+
+   ```bash
+   ./crsdk build:mcp
+   ```
+
+3. **Pack** the installable bundle. This builds the native `CameraWebApp` first if it isn't built, then embeds it plus its runtime libraries:
+
+   ```bash
+   ./crsdk pack:mcp
+   ```
+
+   The result is `mcp/alpha-camera.mcpb`.
+
+</Steps>
+
+:::caution[Redistribution]
+The `.mcpb` embeds Sony's Camera Remote SDK runtime (`libCr_Core`, the `CrAdapter` transport plugins, `libusb`/`libssh2`) and OpenCV. Installing it **on your own machine** is fine. **Distributing** it redistributes Sony's proprietary runtime — you are responsible for complying with Sony's SDK EULA and each library's license, and on macOS for code-signing / notarizing the bundle before you share it.
+:::
+
+## Install in Claude Desktop
+
+<Steps>
+
+1. Open **Claude Desktop → Settings → Extensions**.
+
+2. Drag `mcp/alpha-camera.mcpb` onto the window (or use **Install from file**).
+
+3. Leave **Camera server URL** at its default (`http://localhost:8080`) unless you run the REST server yourself — the bundle spawns and manages it for you.
+
+4. Enable the extension. Claude now has the camera tools (`connect_camera`, `get_camera_state`, `set_property`, `capture_and_review`, …).
+
+</Steps>
+
+## Add the skill (recommended)
+
+The bundle carries the *tools*; the photographic *procedures* — guided setups, exposure bracketing, focus stacking — live in a Claude **Skill** that ships alongside the bundle at `mcp/skills/sony-camera-control/`. The Skill cannot live inside the `.mcpb`; install it separately:
+
+<Tabs>
+<TabItem label="Claude Desktop">
+Copy the `sony-camera-control` folder into your Skills directory, then enable it in **Settings → Capabilities → Skills**.
+</TabItem>
+<TabItem label="Claude Code">
+```bash
+cp -r mcp/skills/sony-camera-control ~/.claude/skills/
+```
+Restart Claude Code; the skill triggers on camera requests.
+</TabItem>
+</Tabs>
+
+## First run
+
+With a camera connected, ask Claude:
+
+> Connect to my camera and show me the current settings.
+
+Under the hood that runs `connect_camera` (which handles the PC-remote priority-key handshake) then `get_camera_state`. From there:
+
+> Set ISO to 400, then shoot and show me the frame.
+
+runs `set_property` (confirming the camera accepted the value) and `capture_and_review` (shutter → autofocus → transfer → returns the image inline).
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| Tools present but every call fails to connect | The bundled server couldn't start. Check that a camera is attached and in **PC Remote** mode; try `./crsdk doctor`. |
+| "No camera found" | Reconnect USB; make sure no other app (Imaging Edge, another Claude session) holds the camera. |
+| Settings look read-only (`writable: false`) | Connect first — the priority-key handshake unlocks writability. `connect_camera` does this for you. |
+| You run your own REST server | Set **Camera server URL** to it in the extension settings; the bundle then adopts it instead of spawning its own. |
+
+<LinkCard title="Setup: documentation servers" href="/alpha-sdk-api/mcp-server/setup/" description="The hosted CameraRemoteSDK + CameraHelp research servers (different from this)." />

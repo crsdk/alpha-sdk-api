@@ -82,6 +82,7 @@ export default defineConfig({
           items: [
             { slug: 'mcp-server/overview' },
             { slug: 'mcp-server/setup' },
+            { slug: 'mcp-server/camera-control' },
             { slug: 'mcp-server/system-prompt' },
             { slug: 'mcp-server/troubleshooting' },
           ],
