@@ -10,8 +10,9 @@
 
 import { existsSync, statSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
 import { colors, symbols } from '../lib/theme.js';
+import { TerminalApp, type SystemInfo } from '../lib/terminal.js';
 import {
   printHeader, printCheck, printKV, printSection, printCommand,
   printBlank, printSummary,
@@ -137,7 +138,7 @@ async function doctor(): Promise<void> {
 
   printBlank();
   printSummary(passed, warnings, failed);
-  process.exit(failed > 0 ? 1 : 0);
+  process.exitCode = failed > 0 ? 1 : 0;
 }
 
 async function build(argv: string[]): Promise<void> {
@@ -214,7 +215,7 @@ async function status(): Promise<void> {
   // status only needs the port; probe directly
   const running = await mgr.isRunning().catch(() => false);
   await printCheck(running ? 'pass' : 'fail', 'Server', running ? 'running on :8080' : 'not running');
-  process.exit(running ? 0 : 1);
+  process.exitCode = running ? 0 : 1;
 }
 
 async function stop(): Promise<void> {
@@ -282,6 +283,7 @@ ${colors.white('MCP SERVER')} ${m('(camera-control bundle, from mcp/)')}
   ${a('pack:mcp')}            Build alpha-camera.mcpb for Claude Desktop
 
 ${colors.white('MISC')}
+  ${a('tui')}                 Launch the interactive shell (also: bare "crsdk")
   ${a('help')}                Show this help
   ${a('version')}             Print the CLI version
 
@@ -289,10 +291,48 @@ ${m('First run:')}  crsdk install --zip <sony-sdk.zip>  →  crsdk build  →  c
 `);
 }
 
+// --- interactive TUI ---------------------------------------------------------
+
+/** Snapshot of the environment for the TUI welcome header. */
+function buildSystemInfo(): SystemInfo {
+  const root = findRepoRoot();
+  const bin = root ? serverBinary(root) : null;
+  return {
+    version: getPackageVersion(),
+    platform: `${process.platform}-${process.arch}`,
+    platformName: getOsDescription(),
+    nodeVersion: process.version,
+    inRepo: root !== null,
+    sdkInstalled: root ? sdkPresent(root) : false,
+    serverBuilt: bin !== null,
+    binaryPath: bin ?? undefined,
+  };
+}
+
+/** Launch the full-screen interactive shell; each line is run through dispatch(). */
+async function launchTui(): Promise<void> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    fail('The interactive shell needs a TTY. Run a command directly, e.g. "crsdk doctor".');
+    return;
+  }
+  const app = new TerminalApp(buildSystemInfo());
+  app.start(async (input) => {
+    const [cmd, ...rest] = input.trim().split(/\s+/);
+    if (cmd === 'exit' || cmd === 'quit') { app.stop(); process.exit(0); }
+    await app.captureOutput(async () => {
+      await dispatch(cmd, rest, true);
+    });
+  });
+}
+
 // --- dispatch ----------------------------------------------------------------
 
-async function main(): Promise<void> {
-  const [cmd, ...rest] = process.argv.slice(2);
+/**
+ * Run one command. `tui` is true when called from the interactive shell, where
+ * a blocking `start` would freeze the canvas — so there it spawns the server
+ * detached instead of holding the process open.
+ */
+async function dispatch(cmd: string | undefined, rest: string[], tui = false): Promise<void> {
   switch (cmd) {
     case 'doctor': return doctor();
     case 'install': return installCmd(rest);
@@ -302,25 +342,55 @@ async function main(): Promise<void> {
     case 'build': return build(rest);
     case 'upgrade': return upgrade();
     case 'start':
-    case 'serve': return start(rest);
+    case 'serve':
+      if (tui) return startDetached(rest);
+      return start(rest);
     case 'status': return status();
     case 'stop': return stop();
     case 'mcp': return mcpCommand(rest[0], rest[1], rest[2]);
     case 'gen:mcp': return genMcp(findRepoRoot());
     case 'build:mcp': return buildMcp(findRepoRoot());
     case 'pack:mcp': return packMcp(findRepoRoot());
+    case 'tui':
+    case 'interactive':
+    case 'i':
+      if (tui) { console.log(`${symbols.warn} Already in the interactive shell.`); return; }
+      return launchTui();
     case 'version':
     case '--version':
     case '-v': console.log(getPackageVersion()); return;
     case 'help':
     case '--help':
-    case '-h':
-    case undefined: return help();
+    case '-h': return help();
+    case undefined:
+      // Bare `crsdk` in a terminal drops into the interactive shell; otherwise help.
+      if (!tui && process.stdin.isTTY && process.stdout.isTTY) return launchTui();
+      return help();
     default:
       console.log(`${symbols.cross} Unknown command: ${cmd}`);
       help();
       process.exitCode = 1;
   }
+}
+
+/** TUI-safe `start`: spawn the built server detached so the shell stays responsive. */
+async function startDetached(argv: string[]): Promise<void> {
+  const root = findRepoRoot();
+  const bin = root ? serverBinary(root) : null;
+  if (!bin) { fail('Server not built. Run "build" first.'); return; }
+  const portArg = argv[argv.indexOf('--port') + 1];
+  const port = argv.includes('--port') && portArg ? Number(portArg) : 8080;
+  const child = spawn(bin, ['--port', String(port)], {
+    cwd: dirname(bin), detached: true, stdio: 'ignore',
+  });
+  child.unref();
+  await printCheck('pass', 'Server', `starting on http://localhost:${port} (background)`);
+  console.log(`  ${symbols.bullet} Stop it with ${colors.accent('stop')}.`);
+}
+
+async function main(): Promise<void> {
+  const [cmd, ...rest] = process.argv.slice(2);
+  await dispatch(cmd, rest);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
