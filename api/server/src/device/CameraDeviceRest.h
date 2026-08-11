@@ -103,8 +103,8 @@ public:
     // --- Identity / handle (primary contract used by the controller) ---
     std::int32_t get_number() const { return m_number; }
     std::int64_t get_device_handle() const { return m_deviceHandle; }
-    cli::text get_model() const { return cli::text(m_info->GetModel()); }
-    cli::text get_id() const;
+    cli::text get_model() const;   // width-aware decode (see .cpp) — Windows Cr_Core returns UTF-16
+    cli::text get_id() const;      // width-aware decode (see .cpp)
     SCRSDK::CrSdkControlMode get_sdkmode() const { return m_modeSDK; }
 
     // --- Property helpers (formatting; raw get/set is done SDK-direct by the
