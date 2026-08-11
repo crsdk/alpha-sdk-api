@@ -668,11 +668,21 @@ export class TerminalApp {
       return;
     }
 
-    // Printable characters
-    if (key >= ' ' && key.length === 1) {
-      this.inputBuffer += key;
-      this.updatePopup();
-      this.render();
+    // Printable input — a single typed character OR a multi-character chunk
+    // from a paste (raw mode delivers a paste as one 'data' event). Recognized
+    // control keys and escape sequences are handled above; anything starting
+    // with ESC here is an unhandled sequence we don't want to insert. Flatten
+    // pasted newlines to spaces (keep it a single command line, don't submit
+    // mid-paste) and drop any remaining control characters.
+    if (!key.startsWith('\x1b')) {
+      const text = key
+        .replace(/\r\n?|\n/g, ' ')
+        .replace(/[\x00-\x1f\x7f]/g, '');
+      if (text) {
+        this.inputBuffer += text;
+        this.updatePopup();
+        this.render();
+      }
     }
   };
 
