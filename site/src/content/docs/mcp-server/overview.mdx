@@ -18,44 +18,11 @@ MCP (Model Context Protocol) lets AI assistants like Claude and Cursor connect t
 | **What it does** | Answers questions about the SDK, camera models, and REST API from indexed documentation | Operates a connected Sony Alpha — read settings, change ISO/shutter, shoot, review the frame |
 | **Where it runs** | Hosted (cloud), read-only | Local — you build it from this repo |
 | **You need** | Just an MCP-capable AI client | The built server + a camera on USB |
-| **Guide** | This section | [Camera Control](/alpha-sdk-api/mcp-server/camera-control/) |
+| **Guide** | [Docs MCP → Setup](/alpha-sdk-api/mcp-server/setup/) | [Camera Control](/alpha-sdk-api/mcp-server/camera-control/) |
 
 <CardGrid>
-  <LinkCard title="Docs MCP → Setup" href="/alpha-sdk-api/mcp-server/setup/" description="Connect the hosted research servers to your AI assistant in a few minutes." />
+  <LinkCard title="Docs MCP → Setup" href="/alpha-sdk-api/mcp-server/setup/" description="Connect the hosted research servers (SDK docs + camera help guides) to your AI assistant." />
   <LinkCard title="Camera Control MCP" href="/alpha-sdk-api/mcp-server/camera-control/" description="Build the local .mcpb bundle and drive a real camera from Claude." />
 </CardGrid>
 
-The rest of this page covers the **Docs MCP** servers. For the control server, follow the [Camera Control](/alpha-sdk-api/mcp-server/camera-control/) guide.
-
-## Docs MCP servers
-
-The Docs MCP servers connect your AI assistant to specialized knowledge bases. Instead of manually searching through hundreds of pages of documentation, you ask questions in plain English and get instant answers with code examples.
-
-There are **two documentation endpoints**, each covering a different part of the camera development ecosystem:
-
-| Server | Name | What it covers | URL |
-|--------|------|---------|-----|
-| Camera Remote SDK Docs | `CameraRemoteSDK` | C++/C# SDK — APIs, code examples, compatibility, error codes. 13,000+ indexed pieces | `https://sdk-rag-agent-production.up.railway.app/mcp` |
-| Camera Help Guides | `CameraHelp` | 24 Sony camera models — settings, features, shooting modes, troubleshooting. 55,000+ entries | `https://camera-rag-agent-production.up.railway.app/mcp` |
-
-You can install any combination of them — they run independently and can be used simultaneously.
-
-## How It Works
-
-1. **You Ask a Question** — Ask your AI assistant about any Sony camera development topic
-2. **The MCP Server Searches** — Your AI automatically selects the right server and searches through indexed documentation
-3. **You Get Instant Results** — Receive relevant documentation, code examples, and explanations without leaving your conversation
-
-:::caution
-**ChatGPT Not Recommended**: Due to OpenAI's unofficial support for MCP servers, ChatGPT has significant limitations with code generation and tool functionality. We strongly recommend using Claude for SDK development. Only use ChatGPT if you already have an active subscription and cannot access Claude.
-:::
-
-
-## The Technology (Simplified)
-
-- **RAG (Retrieval-Augmented Generation)**: Combines AI understanding with database search to find accurate answers
-- **Vector Embeddings**: Converts documentation into a format AI can search semantically
-- **MCP (Model Context Protocol)**: The standard that lets AI assistants connect to these servers
-- **Cloud Hosted**: Runs on Railway and Cloudflare for reliable 24/7 availability
-
-You don't need to understand these technologies — just connect the servers to your AI assistant and start asking questions.
+Pick the one that fits what you're doing: **Docs MCP** to research the SDK, camera models, and REST API while you build; **Camera Control MCP** to actually operate a camera. They're independent — you can use either, both, or neither.

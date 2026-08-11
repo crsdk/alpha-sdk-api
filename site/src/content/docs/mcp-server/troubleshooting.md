@@ -29,8 +29,8 @@ While we've taken steps to ensure the smoothest experience possible, you may enc
 
 **Solutions:**
 
-- Use the [system prompt](/alpha-sdk-api/mcp-server/system-prompt/) to refine Claude's search approach.
-- Modify the system prompt to instruct Claude to prioritize quick answers over deep research.
+- Tell Claude, in your prompt, to refine or narrow its search approach.
+- Ask Claude to prioritize quick answers over deep research.
 - Interrupt Claude's response and ask it to summarize the information it found.
 
 ### "Tool [tool name] not found"

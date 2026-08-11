@@ -85,7 +85,6 @@ export default defineConfig({
               label: 'Docs MCP',
               items: [
                 { slug: 'mcp-server/setup' },
-                { slug: 'mcp-server/system-prompt' },
                 { slug: 'mcp-server/troubleshooting' },
               ],
             },
