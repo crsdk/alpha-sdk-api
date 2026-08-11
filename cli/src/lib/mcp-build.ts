@@ -39,10 +39,19 @@ function mcpDir(root: string | null): string | null {
   return dir;
 }
 
+// On Windows npm/npx are .cmd shims, which CreateProcess cannot launch directly
+// (ENOENT), so they need shell: true — but the shell re-splits arguments on
+// spaces, so paths must be quoted before they reach it.
+const needsShell = process.platform === 'win32';
+
+function runTool(cmd: string, args: string[], opts: { cwd?: string } = {}) {
+  const finalArgs = needsShell ? args.map((a) => (/\s/.test(a) ? `"${a}"` : a)) : args;
+  return spawnSync(cmd, finalArgs, { ...opts, stdio: 'inherit', shell: needsShell });
+}
+
 /** Run an npm script in a directory, streaming output. Returns true on success. */
 function npm(cwd: string, args: string[]): boolean {
-  const r = spawnSync('npm', args, { cwd, stdio: 'inherit' });
-  return r.status === 0;
+  return runTool('npm', args, { cwd }).status === 0;
 }
 
 /** Ensure node_modules is present in mcp/ before a codegen/build that needs it. */
@@ -212,14 +221,14 @@ export async function packMcp(root: string | null): Promise<void> {
 
     console.log(`${symbols.arrow} Installing production dependencies…`);
     const install = existsSync(join(stage, 'package-lock.json'))
-      ? spawnSync('npm', ['ci', '--omit=dev'], { cwd: stage, stdio: 'inherit' })
-      : spawnSync('npm', ['install', '--omit=dev'], { cwd: stage, stdio: 'inherit' });
+      ? runTool('npm', ['ci', '--omit=dev'], { cwd: stage })
+      : runTool('npm', ['install', '--omit=dev'], { cwd: stage });
     if (install.status !== 0) { fail('Production install failed (see output above).'); return; }
 
     const out = join(dir, 'alpha-camera.mcpb');
     if (existsSync(out)) rmSync(out);
     console.log(`${symbols.arrow} Packing the MCP bundle…`);
-    const r = spawnSync('npx', ['--yes', '@anthropic-ai/mcpb', 'pack', stage, out], { stdio: 'inherit' });
+    const r = runTool('npx', ['--yes', '@anthropic-ai/mcpb', 'pack', stage, out]);
     if (r.status !== 0 || !existsSync(out)) { fail('mcpb pack failed (see output above).'); return; }
 
     printBlank();
