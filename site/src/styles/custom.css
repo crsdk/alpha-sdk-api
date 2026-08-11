@@ -204,3 +204,13 @@
   background-color: var(--sl-color-gray-6);
   color: var(--sl-color-white);
 }
+
+/* ------------------------------------------------------------ site title -- */
+/* Match Scalar's header title colour — its near-white brand tone (--scalar-color-1
+   = --sl-color-white, so #e7e7e7 in dark / #1b1b1b in light, never invisible on
+   the light header) rather than the accent blue — and carry a touch more weight
+   so it reads as boldly as Scalar's prominent title. */
+a.site-title {
+  color: var(--sl-color-white);
+  font-weight: 700;
+}
