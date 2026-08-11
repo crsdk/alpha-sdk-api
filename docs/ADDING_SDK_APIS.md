@@ -71,10 +71,16 @@ Every public API addition should update:
 - `api/server/src/device/RestPropertyParsers.*` when property value parsing/formatting is involved
 - `api/server/src/CameraWebController.*`
 - `api/server/src/CameraWebServer.*` when adding routes
-- `api/openapi.yaml`
-- Hosted REST docs source for `crsdk.app` when the public docs need to change
-- Supported client source in the relevant SDK/client repository when generated client behavior changes
-- Hosted example or recipe docs on `crsdk.app` if usage is not obvious
+- `api/openapi.yaml` — the single source of truth; everything below regenerates from it
+
+Everything downstream lives in this same repo and updates in the same commit:
+
+- **Client SDKs** — never hand-edited. The TypeScript/Python clients are generated from `api/openapi.yaml` by Fern; the `sdk-preview` CI job regenerates them on your PR so you can review the diff. Just update the spec. See [SDK_GENERATION.md](SDK_GENERATION.md).
+- **MCP camera-control server (`mcp/`)** — decide which half your endpoint belongs to:
+  - A **flat 1:1 tool** (validate input → one client call → return the response): it is *generated*. Run `./crsdk gen:mcp`; the coverage gate in `mcp/scripts/gen-tools.mjs` will flag a new flat-eligible endpoint until you classify it (add it to the tool manifest, or to the `HANDWRITTEN` / `NOT_EXPOSED` allowlist with a reason).
+  - A **composite** (multi-step orchestration, ordering quirks, settle-polling, session state, or the SSE stream): hand-write it in `mcp/src/tools/*.ts`. The generator never touches these — its consumed operationIds go in the `HANDWRITTEN` allowlist so they read as intentionally not-generated.
+  - Either way, CI's `mcp` job fails on drift, so regenerate and commit.
+- **Docs** — the site lives in `site/src/content/docs/`. The API reference is driven by `api/openapi.yaml` (no manual edits), but update the relevant guide/recipe page when customer usage is not obvious.
 
 Do not add generated client packages or bundled example apps to this repository.
 

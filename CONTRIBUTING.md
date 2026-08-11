@@ -4,10 +4,10 @@ Thanks for helping improve the Alpha Camera REST API.
 
 ## Supported Packages
 
-Package details and install commands are documented on the hosted SDK docs:
+Package details and install commands are documented on the hosted SDK docs (GitHub Pages — the site has no custom domain):
 
-- [SDK overview and published packages](https://crsdk.app/sdk/overview)
-- [Alpha Camera REST API docs](https://crsdk.app/)
+- [SDK overview and published packages](https://crsdk.github.io/alpha-sdk-api/sdk/overview/)
+- [Alpha Camera REST API docs](https://crsdk.github.io/alpha-sdk-api/)
 
 Do not add generated client packages, example apps, or deprecated package artifacts to this repository.
 
@@ -70,10 +70,49 @@ Every feature should update:
 - REST handling in `api/server/src/CameraWebController.*`.
 - OpenAPI contract in `api/openapi.yaml`.
 - No manual client changes — the TS/Python clients regenerate from `api/openapi.yaml`; just update the spec and review the SDK Preview artifact.
-- Hosted docs or examples on `crsdk.app` when customer usage is not obvious.
+- MCP tools — see [Updating the MCP camera-control server](#updating-the-mcp-camera-control-server) below.
+- Docs — see [Updating the docs](#updating-the-docs) below.
 
 Do not edit `shared/core/` — those are Sony's stock SDK sample sources, fetched
 locally via `scripts/extract-sdk.sh` and not tracked in this repository.
+
+## Updating the MCP Camera-Control Server
+
+The MCP server in `mcp/` exposes the REST API as tools for AI camera control. It
+has two halves, and a new endpoint belongs to one of them:
+
+- **Generated flat tools** — a thin 1:1 wrapper (validate input → one client call
+  → return the response). These are generated from `api/openapi.yaml`. Run
+  `./crsdk gen:mcp`; the coverage gate in `mcp/scripts/gen-tools.mjs` refuses to
+  finish while any spec operation is unclassified, so you must add a new
+  flat-eligible endpoint to the tool manifest (or to the `HANDWRITTEN` /
+  `NOT_EXPOSED` allowlist, with a reason). Never hand-edit `mcp/src/tools/generated.ts`.
+- **Hand-written composites** — anything with orchestration: multi-step SDK
+  sequences, ordering quirks, settle-polling, session state, or the SSE event
+  stream. Write these by hand in `mcp/src/tools/*.ts`, and list the operationIds
+  they consume in the `HANDWRITTEN` allowlist so the coverage gate treats them as
+  intentionally not-generated.
+
+Rule of thumb: if the tool is one client call with no extra logic, it's
+generated; if it coordinates several calls or holds state, it's hand-written. CI's
+`mcp` job regenerates and fails on drift, so run `./crsdk gen:mcp && ./crsdk build:mcp`
+and commit the result. Full split and the build pipeline: [docs/MCP_SERVERS.md](docs/MCP_SERVERS.md)
+and the [Camera Control](https://crsdk.github.io/alpha-sdk-api/mcp-server/camera-control/) page.
+
+## Updating the Docs
+
+The documentation site lives in this repo under `site/` (Astro Starlight) and
+publishes to GitHub Pages on merge to `main`.
+
+- **API reference** is driven by `api/openapi.yaml` — do not hand-edit it; change
+  the spec and it regenerates.
+- **Guides, recipes, and MCP pages** are Markdown/MDX under
+  `site/src/content/docs/`. Edit the relevant page in the same commit as your
+  change, and add it to the sidebar in `site/astro.config.mjs` if it's new.
+- Build locally with `npm --prefix site run build` (or `run preview`) before
+  opening the PR; the `Build site` CI job must pass.
+- `docs/` (this folder) holds contributor-facing setup/reference Markdown, separate
+  from the published site.
 
 ## Agent-Assisted Contributions
 
@@ -90,7 +129,7 @@ Use [docs/MCP_SERVERS.md](docs/MCP_SERVERS.md) to configure the documentation MC
 
 - The change does not add Sony SDK files, SDK binaries, generated build folders, camera media, or local credentials.
 - The API contract and implementation match.
-- Public package names and install guidance match `https://crsdk.app/sdk/overview`.
+- Public package names and install guidance match the [SDK overview](https://crsdk.github.io/alpha-sdk-api/sdk/overview/).
 - Unit/static checks and any relevant e2e checks from `docs/TESTING.md` were run, or skipped with a clear reason.
 - The feature has at least manual test notes. Hardware-dependent behavior should list camera model, firmware, connection mode, and SDK version.
 - Any model-specific claim is backed by SDK docs or camera help docs.
