@@ -15,7 +15,7 @@
  *   --scalar-color-1       #e7e7e7    #1b1b1b    headings
  *   --scalar-color-2       #a4a4a4    #757575    body text
  *   --scalar-color-3       #797979    #8e8e8e    muted
- *   --scalar-color-accent  #00aeff    #009cff
+ *   accent (brand)         #ff8c00    #cd6600    orange, from the Mintlify docs palette
  *
  * Starlight's grey ramp is SEMANTIC and inverts between themes: gray-1 is
  * whatever contrasts most with the background, gray-6 whatever sits closest to
@@ -27,9 +27,9 @@
 /* ---------------------------------------------------------------- dark ---- */
 :root,
 :root[data-theme='dark'] {
-  --sl-color-accent-low: #06283a;
-  --sl-color-accent: #00aeff;
-  --sl-color-accent-high: #9ad8f8;
+  --sl-color-accent-low: #3a2107;
+  --sl-color-accent: #ff8c00;
+  --sl-color-accent-high: #ffc794;
 
   --sl-color-white: #e7e7e7; /* --scalar-color-1 */
   --sl-color-gray-1: #e7e7e7;
@@ -52,7 +52,7 @@
   --sl-color-hairline-shade: #1a1a1a;
 
   --sl-color-text: #a4a4a4;
-  --sl-color-text-accent: #00aeff;
+  --sl-color-text-accent: #ff9e33;
   --sl-color-text-invert: #0f0f0f;
 
   --scalar-surface-raised: #272727; /* --scalar-background-3 */
@@ -69,9 +69,9 @@
 /* --------------------------------------------------------------- light ---- */
 :root[data-theme='light'],
 [data-theme='light'] ::backdrop {
-  --sl-color-accent-low: #d6ecfb;
-  --sl-color-accent: #009cff;
-  --sl-color-accent-high: #005b96;
+  --sl-color-accent-low: #ffe8d6;
+  --sl-color-accent: #cd6600;
+  --sl-color-accent-high: #8a4500;
 
   --sl-color-white: #1b1b1b; /* --scalar-color-1 */
   --sl-color-gray-1: #1b1b1b;
@@ -99,7 +99,7 @@
   --sl-color-text: #4a4a4a;
   /* Scalar's light accent (#009cff) is only 2.8:1 on white. Darkened until
      links clear AA with real headroom rather than by a hair. */
-  --sl-color-text-accent: #0068ad;
+  --sl-color-text-accent: #cd6600;
   --sl-color-text-invert: #ffffff;
 
   --scalar-surface-raised: #e7e7e7; /* --scalar-background-3 */
