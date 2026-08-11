@@ -13,7 +13,7 @@ Use this skill to gather evidence before coding or documenting a Sony camera fea
 
 - Use `CameraRemoteSDK` for C++/C# SDK APIs, enum names, operation codes, property codes, error codes, compatibility tables, and code examples.
 - Use `CameraHelp` for camera model help guides, menu terminology, shooting-mode behavior, and model-specific feature descriptions.
-- Use `CameraWebAPI` and `https://crsdk.app/` for existing REST endpoint names, request and response shapes, client SDK examples, and public docs alignment.
+- Read `api/openapi.yaml` (the source of truth) and the [hosted docs](https://crsdk.github.io/alpha-sdk-api/) for existing REST endpoint names, request and response shapes, and client SDK examples.
 
 ## Research Workflow
 
@@ -40,6 +40,6 @@ For implementation tasks, summarize:
 - Do not treat MCP docs as Sony legal guidance. Sony SDK redistribution and license questions must use Sony's official license.
 - Do not copy large passages from external docs into repo files.
 - Distinguish confirmed SDK facts from implementation inferences.
-- If MCP tools are unavailable, use local docs and hosted docs at `https://crsdk.app/`, then state the evidence gap.
+- If MCP tools are unavailable, use local docs and hosted docs at `https://crsdk.github.io/alpha-sdk-api/`, then state the evidence gap.
 
-Read `docs/MCP_SERVERS.md` or `https://crsdk.app/MCP-Server/overview` for server names and setup details.
+Read `docs/MCP_SERVERS.md` or `https://crsdk.github.io/alpha-sdk-api/mcp-server/overview/` for server names and setup details.

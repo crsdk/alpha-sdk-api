@@ -204,7 +204,7 @@ async function start(argv: string[]): Promise<void> {
   }
   const p = mgr.getPort();
   await printCheck('pass', 'Server running', `http://localhost:${p}`);
-  printKV('Docs', 'https://crsdk.app');
+  printKV('Docs', 'https://crsdk.github.io/alpha-sdk-api');
   console.log(`${symbols.bullet} Press ${colors.accent('Ctrl+C')} to stop.`);
   // keep the process alive
   await new Promise(() => {});

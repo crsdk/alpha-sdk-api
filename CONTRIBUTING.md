@@ -70,14 +70,29 @@ the generated client, that is your breaking change surfacing.
 ## Local Setup
 
 1. Clone the public repository.
-2. Download the Sony Camera Remote SDK separately from Sony.
-3. Place SDK files using [docs/SDK_SETUP.md](docs/SDK_SETUP.md).
+2. Download the Sony Camera Remote SDK from the [official Sony download page](https://support.d-imaging.sony.co.jp/app/sdk/en/index.html).
+3. Place it with `crsdk install --zip <sony-sdk.zip>` (see [docs/SDK_SETUP.md](docs/SDK_SETUP.md) for the layout).
 4. Install platform dependencies for CMake and Node.js as needed. (JSON is vendored in `api/server/third_party/jsoncpp`; there is no OpenSSL or external jsoncpp dependency.)
-5. Build the C++ server from `api/server`.
+5. Build the server with `crsdk build`.
 
 ## Adding API Coverage
 
 For new camera features, follow [docs/ADDING_SDK_APIS.md](docs/ADDING_SDK_APIS.md).
+
+### What each change requires
+
+The spec drives the clients, the MCP tools, and the reference docs, so a change is
+not done until all the artifacts it touches are updated **in the same PR**:
+
+| Your change | You must also update |
+| --- | --- |
+| **New endpoint / property / action** | `api/openapi.yaml` (contract) **+** a docs page under `site/src/content/docs/` **+** regenerate the MCP flat tools (`crsdk gen:mcp`) and classify the new op |
+| **Endpoint that needs multi-step orchestration** (sequence, bounded wait, callback, SSE, session state) | the above **+** a **hand-written MCP composite** in `mcp/src/tools/*.ts` (the generator only covers 1:1 tools) |
+| **New request/response field or enum value** | `api/openapi.yaml` — additively (see [Backwards Compatibility](#backwards-compatibility)); the clients regenerate on CI |
+| **Changed camera behaviour / limits** | the relevant `site/src/content/docs/` page (and `web-api/compatibility` if model-specific) |
+| **Anything user-facing** | never hand-edit a client SDK — change the spec and review the SDK Preview artifact |
+
+Do **not** land a spec change with no docs and no MCP update — CI flags it.
 
 All contribution happens in this repo. `shared/core/` holds Sony's **stock** SDK
 sample helpers (fetched from the SDK download, not redistributed here) and is
@@ -159,6 +174,7 @@ Use [docs/MCP_SERVERS.md](docs/MCP_SERVERS.md) to configure the documentation MC
 
 - The change does not add Sony SDK files, SDK binaries, generated build folders, camera media, or local credentials.
 - The API contract and implementation match.
+- **If `api/openapi.yaml` changed:** the relevant `site/src/content/docs/` page was updated in this PR, and `crsdk gen:mcp` was run + committed (a new multi-step tool also has a hand-written composite in `mcp/src/tools/`).
 - The change is backwards-compatible — no removed/renamed/retyped spec elements, no tightened validation (or it carries an approved breaking-change plan). The SDK Preview artifact shows only additions.
 - Public package names and install guidance match the [SDK overview](https://crsdk.github.io/alpha-sdk-api/sdk/overview/).
 - Unit/static checks and any relevant e2e checks from `docs/TESTING.md` were run, or skipped with a clear reason.

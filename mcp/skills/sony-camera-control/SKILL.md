@@ -138,34 +138,12 @@ Work the ladder in order. Do **not** jump to the docs for a single, self-explana
    `get_connection_status` to confirm the camera is still connected (USB drops happen).
 
 4. **Only if you have hit multiple failed tool calls in a row that steps 1–3 don't explain**,
-   consult the **Camera Remote Web API docs MCP server** (`CameraWebAPI`). Use it to look up
-   the exact endpoint semantics, required connection mode, request/response shape, or the
-   meaning of an SDK error/warning code (e.g. `0x8402`, `focus_mode_not_af`) behind a
-   persistent failure. This is a deliberate last resort: it costs round-trips and the answer
-   is usually already in the error message or `available_values`. Search it with the specific
-   error text or endpoint name (its tools are `search_sony_developer_platform` and
-   `query_docs_filesystem_sony_developer_platform`), apply the fix, and return to the golden path.
-
-   **If that docs server isn't connected yet, set it up first (once):**
-   - **Claude Code (you can run this yourself):**
-     ```bash
-     claude mcp add CameraWebAPI --scope user -- npx mcp-remote https://crsdk.app/mcp
-     # Windows: claude mcp add CameraWebAPI --scope user -- cmd /c npx mcp-remote https://crsdk.app/mcp
-     ```
-     Then confirm with `claude mcp list`. (Requires Node 18+ with `npx` on PATH.)
-   - **Claude Desktop (guide the user — you can't edit connectors yourself):** Settings →
-     Connectors → **Add custom connector** → Name `CameraWebAPI`, URL
-     `https://crsdk.app/mcp` → Add. Then open the tools menu in a new chat and toggle
-     `CameraWebAPI` on. Setting its tool permissions to "allow unsupervised" avoids repeated
-     prompts.
-   - **Manual JSON** (`~/.claude.json` user scope, or project `.mcp.json`):
-     ```json
-     { "mcpServers": { "CameraWebAPI": {
-         "type": "stdio", "command": "npx",
-         "args": ["mcp-remote", "https://crsdk.app/mcp"] } } }
-     ```
-   > Note: this endpoint is in private beta — install it for the user, but don't repost the
-   > URL publicly.
+   consult the REST API docs to look up the exact endpoint semantics, required connection
+   mode, request/response shape, or the meaning of an SDK error/warning code (e.g. `0x8402`,
+   `focus_mode_not_af`) behind a persistent failure — the [hosted docs](https://crsdk.github.io/alpha-sdk-api/)
+   or the `api/openapi.yaml` spec in the repo. This is a deliberate last resort: it costs
+   round-trips and the answer is usually already in the error message or `available_values`.
+   Apply the fix and return to the golden path.
 
 If failures persist after consulting the docs (e.g. repeated USB disconnects, the server
 won't start), surface a clear summary to the user rather than looping — describe what you

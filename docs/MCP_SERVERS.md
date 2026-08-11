@@ -12,11 +12,12 @@ These documentation servers are community-built tools. Sony's official product i
 | --- | --- | --- |
 | `CameraRemoteSDK` | C++/C# SDK APIs, code examples, compatibility, error codes | `https://sdk-rag-agent-production.up.railway.app/mcp` |
 | `CameraHelp` | Camera model help guides, settings, feature behavior | `https://camera-rag-agent-production.up.railway.app/mcp` |
-| `CameraWebAPI` | REST API docs, request/response formats, client guidance | `https://crsdk.app/mcp` |
+
+For the REST API's own request/response shapes, read `api/openapi.yaml` directly — it is the single source of truth in this repo.
 
 ## Project Config
 
-This repository includes a project-scoped `.mcp.json` with all three servers. For MCP-compatible development agents, install `mcp-remote` through `npx` and restart the agent after adding the config.
+This repository includes a project-scoped `.mcp.json` with both servers. For MCP-compatible development agents, install `mcp-remote` through `npx` and restart the agent after adding the config.
 
 ```json
 {
@@ -30,11 +31,6 @@ This repository includes a project-scoped `.mcp.json` with all three servers. Fo
       "type": "stdio",
       "command": "npx",
       "args": ["mcp-remote", "https://camera-rag-agent-production.up.railway.app/mcp"]
-    },
-    "CameraWebAPI": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["mcp-remote", "https://crsdk.app/mcp"]
     }
   }
 }
@@ -44,5 +40,5 @@ This repository includes a project-scoped `.mcp.json` with all three servers. Fo
 
 1. Use `CameraRemoteSDK` first for exact SDK symbols such as `CrDeviceProperty_*`, `CrCommandId_*`, callback names, error codes, and sample code.
 2. Use `CameraHelp` when behavior depends on camera model, firmware, shooting mode, storage mode, or menu terminology.
-3. Use `CameraWebAPI` to compare against the currently documented REST API and avoid inventing inconsistent endpoint names.
+3. Read `api/openapi.yaml` to compare against the currently documented REST API and avoid inventing inconsistent endpoint names.
 4. Record the exact SDK symbols and camera models used to justify the implementation in the PR description.

@@ -48,8 +48,10 @@ Build on the target platform; these are not cross-compiled.
 ## Build
 
 ```bash
-# 1. Place the SDK (headers, libs, OpenCV, and the stock shared/core sources)
-./scripts/extract-sdk.sh /path/to/CrSDK.zip macos
+# 1. Place the SDK (headers, libs, OpenCV, and the stock shared/core sources).
+#    Use the CLI — it accepts the EULA, detects the platform, and extracts into
+#    the shared/ layout (macOS: also clears quarantine + ad-hoc signs the dylibs).
+crsdk install --zip /path/to/CrSDK.zip
 
 # 2. Configure and build
 cd api/server

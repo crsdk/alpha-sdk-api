@@ -109,11 +109,7 @@ runs `set_property` (confirming the camera accepted the value) and `capture_and_
 
 ## Troubleshooting
 
-| Symptom | Fix |
-| --- | --- |
-| Tools present but every call fails to connect | The bundled server couldn't start. Check that a camera is attached and in **PC Remote** mode; try `crsdk doctor`. |
-| "No camera found" | Reconnect USB; make sure no other app (Imaging Edge, another Claude session) holds the camera. |
-| Settings look read-only (`writable: false`) | Connect first — the priority-key handshake unlocks writability. `connect_camera` does this for you. |
-| You run your own REST server | Set **Camera server URL** to it in the extension settings; the bundle then adopts it instead of spawning its own. |
+Connection, writability, live view, SD card, settings, and hardware states each
+have their own fixes — see the dedicated page:
 
-<LinkCard title="Setup: documentation servers" href="/alpha-sdk-api/mcp-server/setup/" description="The hosted CameraRemoteSDK + CameraHelp research servers (different from this)." />
+<LinkCard title="Camera Control — Troubleshooting" href="/alpha-sdk-api/mcp-server/camera-control-troubleshooting/" description="Fixes for the local camera-control server." />

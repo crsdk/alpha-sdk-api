@@ -11,17 +11,18 @@ the camera is physically attached to. Everything else — the
 [client you generate](/alpha-sdk-api/sdk/overview/) — talks to it over HTTP.
 
 :::note
-There is no package to install. The server is built from source; see
-`api/distribution/INSTALL_MACOS.md` in the repository for the current build
-steps and prerequisites. The Sony Camera Remote SDK it links against can only
-be obtained by accepting Sony's licence on their download page, so it cannot be
-fetched automatically.
+There is no package to install — the server is built from source. The quickest
+path is the [`crsdk` CLI](/alpha-sdk-api/cli/): `crsdk install --zip <sony-sdk.zip>`,
+then `crsdk build`. The Sony Camera Remote SDK it links against must be downloaded
+by accepting Sony's licence on the
+[official Sony download page](https://support.d-imaging.sony.co.jp/app/sdk/en/index.html),
+so it cannot be fetched automatically.
 :::
 
 ## Run it
 
 ```bash
-CameraWebApp
+crsdk start        # or run the built binary directly: CameraWebApp
 ```
 
 The server listens on `http://localhost:8080` and prints its startup banner. It

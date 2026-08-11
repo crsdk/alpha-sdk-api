@@ -12,7 +12,7 @@ export const pkgRoot = join(__dirname, '..', '..');
 
 export const PLATFORMS = ['darwin-arm64', 'linux-x64', 'linux-arm64', 'win32-x64'] as const;
 export const NPM_SCOPE = '@alpha-sdk';
-export const DOCS_URL = 'https://crsdk.app';
+export const DOCS_URL = 'https://crsdk.github.io/alpha-sdk-api';
 export const SONY_LICENSE_URL = 'https://support.d-imaging.sony.co.jp/app/sdk/licenseagreement_d/en.html';
 export const LICENSE_ACCEPTED_FILE = join(pkgRoot, '.license-accepted');
 
