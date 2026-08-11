@@ -4,6 +4,8 @@ Contributors can use MCP documentation servers to research SDK APIs, camera beha
 
 These documentation servers are community-built tools. Sony's official product is the Camera Remote SDK itself.
 
+> **Not the camera-control MCP.** The servers below are hosted, read-only knowledge bases for *research*. The **camera-control** MCP server — which actually operates a connected camera — is a separate, local server that lives in [`mcp/`](../mcp/) and is built with `crsdk pack:mcp`. See its guide at [mcp-server/camera-control](https://crsdk.github.io/alpha-sdk-api/mcp-server/camera-control/).
+
 ## Servers
 
 | Server | Use For | URL |

@@ -1,14 +1,22 @@
 # Building Platform Binaries
 
-Prebuilt binaries are published through the npm package — see the
-[SDK overview](https://crsdk.app/sdk/overview). Build your own only if you need a
-platform that is not published, a different Sony SDK version, or a build with
-local changes.
+The camera server is **built from source** — it links the Sony Camera Remote SDK,
+which cannot be redistributed, so there is no prebuilt binary to download. Most
+people should just use the `crsdk` CLI, which wraps this whole recipe:
 
-This is the same recipe used to produce the official binaries. There is no build
-workflow in this repository: producing a binary requires the Sony Camera Remote
-SDK, and the SDK can only be obtained by a human accepting Sony's license on the
-official download page. CI cannot fetch it, so the build is a local step.
+```bash
+./crsdk install --zip <sony-sdk.zip>   # accept the EULA + run scripts/extract-sdk.sh
+./crsdk build                          # the CMake steps below
+```
+
+Use the manual steps in this document when you want to understand or customize
+the build — a platform the CLI does not special-case, a different Sony SDK
+version, or a build with local changes.
+
+There is no build workflow in this repository: producing a binary requires the
+Sony Camera Remote SDK, and the SDK can only be obtained by a human accepting
+Sony's license on the official download page. CI cannot fetch it, so the build is
+always a local step.
 
 > **Do not redistribute the Sony SDK.** Do not commit it, attach it to a public
 > release, or ship it inside a container image you publish. Each person building

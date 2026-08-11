@@ -11,30 +11,42 @@ Local SDK/vendor artifacts are intentionally excluded:
 - Sony Camera Remote SDK files and binaries are not redistributed. Contributors must download the SDK from Sony separately.
 - The `shared/core/` SDK integration wrapper (`CameraDevice`, `PropertyValueTable`, etc.) is Sony sample-derived and is also not redistributed. It ships in the SDK download and is placed locally by the extraction helper; only its `CMakeLists.txt` and `README.md` are tracked here.
 - OpenCV headers and runtime files copied from the SDK sample archive are local setup artifacts and are ignored.
-- Deprecated/generated client package artifacts are excluded. Current SDK, npm package, and example-app details live in the hosted [SDK overview](https://crsdk.app/sdk/overview).
+- Generated client-SDK output and build folders are excluded — the clients are regenerated from `api/openapi.yaml`, not committed. See the hosted [SDK overview](https://crsdk.github.io/alpha-sdk-api/sdk/overview/).
 
 ## Project Layout
 
 - `api/server/` - C++ REST API server (MIT-licensed, in this repo).
+- `api/openapi.yaml` - REST API contract (the single source of truth).
 - `shared/core/` - SDK integration wrapper. Sony sample-derived, obtained from the SDK download (see [docs/SDK_SETUP.md](docs/SDK_SETUP.md)); only `CMakeLists.txt` and `README.md` are tracked here.
-- `api/openapi.yaml` - REST API contract.
-- `docs/` - Public setup and contributor documentation.
+- `cli/` - the `crsdk` developer CLI (build the server, manage the SDK, build the MCP bundle). Run it from the repo root with `./crsdk`.
+- `mcp/` - the Alpha Camera **MCP server** for AI camera control, generated + hand-written from the same spec.
+- `fern/` - [Fern](https://buildwithfern.com) config that generates the TypeScript/Python client SDKs from `api/openapi.yaml`.
+- `site/` - the documentation site (Astro Starlight), published to GitHub Pages.
+- `docs/` - contributor documentation (this folder).
+- `skills/` - agent skills for contributors adding API coverage.
 - `tests/unit/` - deterministic unit tests that do not require camera hardware.
-- `skills/` - Agent skills for contributors adding API coverage.
 
-Use the hosted docs for detailed REST API, SDK package, npm install, and example-app guidance:
+Hosted docs (GitHub Pages — the site has no custom domain):
 
-- [Alpha Camera REST API docs](https://crsdk.app/)
-- [SDK overview and published packages](https://crsdk.app/sdk/overview)
-- [MCP server setup](https://crsdk.app/MCP-Server/overview)
+- [Alpha Camera REST API docs](https://crsdk.github.io/alpha-sdk-api/)
+- [SDK overview and published packages](https://crsdk.github.io/alpha-sdk-api/sdk/overview/)
+- [MCP servers](https://crsdk.github.io/alpha-sdk-api/mcp-server/overview/)
 
 ## SDK Setup
 
-Sony SDK files are not distributed in this repository. See [docs/SDK_SETUP.md](docs/SDK_SETUP.md) for the expected folder layout and extraction instructions.
+Sony SDK files are not distributed in this repository. See [docs/SDK_SETUP.md](docs/SDK_SETUP.md) for the expected folder layout and extraction instructions, or run `./crsdk install --zip <sony-sdk.zip>`.
 
-## Binaries
+## Build
 
-Prebuilt binaries ship with the npm package — see the [SDK overview](https://crsdk.app/sdk/overview). To build your own for an unpublished platform, a different SDK version, or local changes, see [docs/BUILDING_BINARIES.md](docs/BUILDING_BINARIES.md).
+The server is **built from source** — it links Sony's SDK, which cannot be redistributed, so there is no prebuilt binary to install. The quickest path:
+
+```bash
+./crsdk install --zip <sony-camera-remote-sdk.zip>   # accept the EULA + place the SDK
+./crsdk build                                        # compile the CameraWebApp server
+./crsdk start                                        # run it on :8080
+```
+
+For the manual CMake recipe, a specific platform, or a different SDK version, see [docs/BUILDING_BINARIES.md](docs/BUILDING_BINARIES.md).
 
 ## Contributing
 
