@@ -1444,12 +1444,7 @@ void CameraDeviceRest::OnNotifyContentsTransfer(CrInt32u notify,
             if (c < 0x20 || c > 0x7E) { valid = false; break; }
         }
         if (valid) {
-            std::string escaped;
-            for (char c : std::string(file.data())) {
-                if (c == '"' || c == '\\') escaped += '\\';
-                escaped += c;
-            }
-            oss << ",\"filename\":\"" << escaped << "\"";
+            oss << ",\"filename\":\"" << jsonEscape(std::string(file.data())) << "\"";
         }
     }
     oss << "}";
@@ -1478,7 +1473,7 @@ void CameraDeviceRest::OnNotifyRemoteTransferResult(CrInt32u notify, CrInt32u pe
         oss << "{\"percent\":" << per << ",\"notify\":\"0x" << std::hex << notify << std::dec << "\"";
         if (filename) {
             cli::text file(filename);
-            oss << ",\"filename\":\"" << file.data() << "\"";
+            oss << ",\"filename\":\"" << jsonEscape(std::string(file.data())) << "\"";
         }
         oss << "}";
         m_eventCallback("transferProgress", oss.str());
@@ -1555,8 +1550,9 @@ void CameraDeviceRest::transferPollLoop() {
 
             if (m_eventCallback) {
                 std::ostringstream oss;
+                // path.string() is a native host path — C:\Users\... on Windows.
                 oss << "{\"percent\":100,\"notify\":\"0x20093\",\"filename\":\""
-                    << path.string() << "\",\"synthetic\":true}";
+                    << jsonEscape(path.string()) << "\",\"synthetic\":true}";
                 m_eventCallback("transferProgress", oss.str());
             }
             it = m_pendingTransfers.erase(it);

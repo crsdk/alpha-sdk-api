@@ -837,7 +837,7 @@ ApiResponse CameraWebController::disconnectCamera(const std::string& cameraId) {
     // (SDK's OnDisconnected won't fire after we clear the callback)
     if (m_webEventCallback) {
         m_webEventCallback(cameraId, "disconnected",
-            "{\"id\":\"" + cameraId + "\",\"errorCode\":\"0x0\"}");
+            "{\"id\":\"" + jsonEscape(cameraId) + "\",\"errorCode\":\"0x0\"}");
     }
 
     // Clear event callback BEFORE disconnect to prevent SDK callback races
