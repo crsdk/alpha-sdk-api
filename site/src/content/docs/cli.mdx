@@ -1,20 +1,50 @@
 ---
 title: "crsdk CLI"
-description: "The developer CLI — place the SDK, build and run the server, build the MCP bundle, and an interactive shell"
+description: "The developer CLI — an interactive shell plus commands to place the SDK, build and run the server, and build the MCP bundle"
 ---
 
 import { Steps, LinkCard } from '@astrojs/starlight/components';
 
 `crsdk` is the developer CLI for the build-from-source workflow: place the Sony
 SDK, compile and run the REST server, and build the camera-control MCP bundle. It
-ships **inside the repo** — there is nothing to install from npm — and you run it
-from the repo root with the `./crsdk` wrapper, which builds the CLI on first use.
+ships **inside the repo** — there is nothing to install from npm — and builds
+itself on first use.
 
 ```bash
 git clone https://github.com/crsdk/alpha-sdk-api.git
 cd alpha-sdk-api
 ./crsdk doctor    # first run also builds the CLI itself
 ```
+
+:::tip[Run it as `crsdk`, not `./crsdk`]
+The CLI is a bundled `./crsdk` wrapper rather than an npm package. To drop the
+`./`, add the repo to your `PATH` once, from the repo root:
+
+```bash
+export PATH="$PWD:$PATH"   # add this line to your shell profile to persist it
+```
+
+The rest of this page uses `crsdk`; run it from inside your clone.
+:::
+
+## Interactive shell
+
+The quickest way to drive everything — and where most human devs should start —
+is the interactive shell. Run `crsdk` with no command in a terminal to drop into
+a full-screen shell (`crsdk tui` launches it explicitly). It runs the same
+commands documented below, with completion so you don't have to remember them.
+
+- **Type a command**, or press <kbd>/</kbd> to browse a **command palette**.
+- **↑ / ↓** move the selection; **Tab** or **Enter** accepts it and chains into the
+  next argument (e.g. `mcp` → `install` → agent → scope).
+- Output streams into the canvas above the input bar; **↑ / ↓** scroll it when no
+  palette is open.
+- **Esc** closes the palette, or exits the shell.
+- `start` in the shell launches the server in the background so the shell stays
+  responsive; stop it with `stop`.
+
+Without a terminal (e.g. in a script or CI), run commands directly — `crsdk tui`
+reports that it needs a TTY.
 
 ## First run
 
@@ -23,24 +53,24 @@ cd alpha-sdk-api
 1. **Place the SDK** — accept Sony's EULA and extract it into `shared/`:
 
    ```bash
-   ./crsdk install --zip <sony-camera-remote-sdk.zip>
+   crsdk install --zip <sony-camera-remote-sdk.zip>
    ```
 
 2. **Build the server:**
 
    ```bash
-   ./crsdk build
+   crsdk build
    ```
 
 3. **Run it** on `:8080`:
 
    ```bash
-   ./crsdk start
+   crsdk start
    ```
 
 </Steps>
 
-Check the toolchain, SDK, and build state at any time with `./crsdk doctor`.
+Check the toolchain, SDK, and build state at any time with `crsdk doctor`.
 
 ## Commands
 
@@ -89,29 +119,11 @@ Builds the [Camera Control MCP](/alpha-sdk-api/mcp-server/camera-control/) serve
 | `help` | Show all commands |
 | `version` | Print the CLI version |
 
-## Interactive shell
-
-Running `crsdk` with no command in a terminal drops into a full-screen shell
-(`crsdk tui` launches it explicitly). It runs the same commands as above, with
-completion so you don't have to remember them.
-
-- **Type a command**, or press <kbd>/</kbd> to browse a **command palette**.
-- **↑ / ↓** move the selection; **Tab** or **Enter** accepts it and chains into the
-  next argument (e.g. `mcp` → `install` → agent → scope).
-- Output streams into the canvas above the input bar; **↑ / ↓** scroll it when no
-  palette is open.
-- **Esc** closes the palette, or exits the shell.
-- `start` in the shell launches the server in the background so the shell stays
-  responsive; stop it with `stop`.
-
-Without a terminal (e.g. in a script or CI), run commands directly —
-`crsdk tui` reports that it needs a TTY.
-
 ## Connect vs. spawn
 
 The CLI runs the server; your app connects to it. Two patterns:
 
-- **Connect (default)** — run `./crsdk start`, then point your client at
+- **Connect (default)** — run `crsdk start`, then point your client at
   `http://localhost:8080`.
 - **Spawn** — set `CRSDK_BINARY` to the built binary
   (`api/server/build/CameraWebApp`) and let your app manage the server's

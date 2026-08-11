@@ -24,12 +24,12 @@ It ships as an `.mcpb` bundle you build from this repo and install into Claude D
    ```bash
    git clone https://github.com/crsdk/alpha-sdk-api.git
    cd alpha-sdk-api
-   ./crsdk install --zip <sony-camera-remote-sdk.zip>
+   crsdk install --zip <sony-camera-remote-sdk.zip>
    ```
 
 2. **A supported Sony Alpha camera** connected over USB, set to **PC Remote** in the camera's USB connection menu.
 
-3. **Node.js 20+** and a C++ toolchain + CMake (run `./crsdk doctor` to check).
+3. **Node.js 20+** and a C++ toolchain + CMake (run `crsdk doctor` to check).
 
 </Steps>
 
@@ -42,19 +42,19 @@ The `crsdk` CLI builds the whole thing. Each step feeds the next:
 1. **Regenerate the tools** from the OpenAPI spec (safe to run anytime — the generated tools are committed):
 
    ```bash
-   ./crsdk gen:mcp
+   crsdk gen:mcp
    ```
 
 2. **Compile** the MCP server (`mcp/src` → `mcp/dist`):
 
    ```bash
-   ./crsdk build:mcp
+   crsdk build:mcp
    ```
 
 3. **Pack** the installable bundle. This builds the native `CameraWebApp` first if it isn't built, then embeds it plus its runtime libraries:
 
    ```bash
-   ./crsdk pack:mcp
+   crsdk pack:mcp
    ```
 
    The result is `mcp/alpha-camera.mcpb`.
@@ -111,7 +111,7 @@ runs `set_property` (confirming the camera accepted the value) and `capture_and_
 
 | Symptom | Fix |
 | --- | --- |
-| Tools present but every call fails to connect | The bundled server couldn't start. Check that a camera is attached and in **PC Remote** mode; try `./crsdk doctor`. |
+| Tools present but every call fails to connect | The bundled server couldn't start. Check that a camera is attached and in **PC Remote** mode; try `crsdk doctor`. |
 | "No camera found" | Reconnect USB; make sure no other app (Imaging Edge, another Claude session) holds the camera. |
 | Settings look read-only (`writable: false`) | Connect first — the priority-key handshake unlocks writability. `connect_camera` does this for you. |
 | You run your own REST server | Set **Camera server URL** to it in the extension settings; the bundle then adopts it instead of spawning its own. |
