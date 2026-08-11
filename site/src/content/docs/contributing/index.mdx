@@ -79,6 +79,13 @@ source, SDK binary, or compiled artefact is committed.
   credentials are added.
 - The OpenAPI contract and the implementation agree — a new endpoint is not
   done until `api/openapi.yaml` describes it.
+- **If `api/openapi.yaml` changed:** the docs under `site/src/content/docs/` were
+  updated in the same PR, and `crsdk gen:mcp` was run and committed (a multi-step
+  tool also gets a hand-written composite in `mcp/src/tools/`). CI's
+  `spec-docs-sync` and `mcp` jobs enforce this. See the
+  [`alpha-sdk-sync-artifacts`](/alpha-sdk-api/contributing/agent-skills/) skill.
+- The change is backwards-compatible — no removed/renamed/retyped spec elements
+  or tightened validation (or it carries an approved breaking-change plan).
 - Unit and static checks pass; relevant end-to-end checks from `docs/TESTING.md`
   were run, or skipped with a stated reason.
 - Hardware-dependent behaviour lists **camera model, firmware, connection mode
