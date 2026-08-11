@@ -54,6 +54,8 @@ Thumbs.db
 *.jpeg
 *.ARW
 *.arw
+# …but the docs site's committed assets are not camera captures
+!site/public/**
 
 # Camera settings files
 *.DAT

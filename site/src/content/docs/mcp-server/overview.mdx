@@ -1,22 +1,37 @@
 ---
 title: "Overview"
-description: "AI-powered documentation search for Sony's camera development tools"
+description: "The two kinds of MCP server here: hosted Docs MCP for research, and a local Camera Control MCP that operates the camera"
 ---
 
-import { LinkCard } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 :::note
-The MCP Servers are community-built developer tools and are **not officially supported by Sony**. Only the [Camera Remote SDK](/alpha-sdk-api/sdk/camera-remote-sdk/) (C++/C#) is an official Sony product.
+The MCP servers are community-built developer tools and are **not officially supported by Sony**. Only the [Camera Remote SDK](/alpha-sdk-api/sdk/camera-remote-sdk/) (C++/C#) is an official Sony product.
 :::
 
+## Two kinds of MCP server
 
-<LinkCard title="Quick Setup" href="/alpha-sdk-api/mcp-server/setup/" description="Get MCP servers running in under 5 minutes" />
+MCP (Model Context Protocol) lets AI assistants like Claude and Cursor connect to outside tools. This project ships **two different kinds**, and they do very different jobs:
 
-## What Are MCP Servers?
+| | **Docs MCP** | **Camera Control MCP** |
+|---|---|---|
+| **What it does** | Answers questions about the SDK, camera models, and REST API from indexed documentation | Operates a connected Sony Alpha — read settings, change ISO/shutter, shoot, review the frame |
+| **Where it runs** | Hosted (cloud), read-only | Local — you build it from this repo |
+| **You need** | Just an MCP-capable AI client | The built server + a camera on USB |
+| **Guide** | This section | [Camera Control](/alpha-sdk-api/mcp-server/camera-control/) |
 
-MCP (Model Context Protocol) servers connect AI assistants like Claude and Cursor to specialized knowledge bases. Instead of manually searching through hundreds of pages of documentation, you ask questions in plain English and get instant answers with code examples.
+<CardGrid>
+  <LinkCard title="Docs MCP → Setup" href="/alpha-sdk-api/mcp-server/setup/" description="Connect the hosted research servers to your AI assistant in a few minutes." />
+  <LinkCard title="Camera Control MCP" href="/alpha-sdk-api/mcp-server/camera-control/" description="Build the local .mcpb bundle and drive a real camera from Claude." />
+</CardGrid>
 
-We provide **two MCP endpoints**, each covering a different part of the camera development ecosystem:
+The rest of this page covers the **Docs MCP** servers. For the control server, follow the [Camera Control](/alpha-sdk-api/mcp-server/camera-control/) guide.
+
+## Docs MCP servers
+
+The Docs MCP servers connect your AI assistant to specialized knowledge bases. Instead of manually searching through hundreds of pages of documentation, you ask questions in plain English and get instant answers with code examples.
+
+There are **two documentation endpoints**, each covering a different part of the camera development ecosystem:
 
 | Server | Name | What it covers | URL |
 |--------|------|---------|-----|
@@ -24,10 +39,6 @@ We provide **two MCP endpoints**, each covering a different part of the camera d
 | Camera Help Guides | `CameraHelp` | 24 Sony camera models — settings, features, shooting modes, troubleshooting. 55,000+ entries | `https://camera-rag-agent-production.up.railway.app/mcp` |
 
 You can install any combination of them — they run independently and can be used simultaneously.
-
-:::tip[Want to control a camera, not just read docs?]
-The servers above are hosted knowledge bases for *research*. To actually operate a connected Sony Alpha from Claude — read settings, shoot, review frames — see [Camera Control](/alpha-sdk-api/mcp-server/camera-control/), a local MCP server you build from this repo.
-:::
 
 ## How It Works
 
