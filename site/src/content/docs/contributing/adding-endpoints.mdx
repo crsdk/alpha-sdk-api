@@ -63,7 +63,7 @@ The full walkthrough, including how to find the right SDK call, is in
   [Fern](https://buildwithfern.com); the `sdk-preview` CI job regenerates them on
   your PR. Never hand-edit a client — just change the spec and review the diff.
 - **MCP camera-control tools** — a plain 1:1 endpoint is a *generated* flat tool
-  (`./crsdk gen:mcp`; a coverage gate makes you classify any new one). An endpoint
+  (`crsdk gen:mcp`; a coverage gate makes you classify any new one). An endpoint
   that needs orchestration — several calls, a bounded wait, session state, the SSE
   stream — is a *hand-written* composite in `mcp/src/tools/*.ts`. Same split as the
   server itself: generic vs. sequence. See

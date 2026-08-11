@@ -41,12 +41,12 @@ export default defineConfig({
         {
           // Starlight prepends `base` to sidebar links — repeating it here
           // produces /alpha-sdk-api/alpha-sdk-api/api-reference/.
-          label: 'API reference & request console',
+          label: 'API Reference',
           link: '/api-reference/',
           attrs: { target: '_self' },
         },
-        { label: 'Platform overview', slug: 'platform-overview' },
-        { label: 'crsdk CLI', slug: 'cli' },
+        { label: 'Overview', slug: 'platform-overview' },
+        { label: 'CLI', slug: 'cli' },
         {
           label: 'REST API',
           items: [
