@@ -8,7 +8,7 @@
 // never fetched as a prebuilt binary.
 // =============================================================================
 
-import { existsSync, statSync, readdirSync } from 'node:fs';
+import { existsSync, statSync, readdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
 import { colors, symbols } from '../lib/theme.js';
@@ -154,8 +154,9 @@ async function build(argv: string[]): Promise<void> {
   const serverDir = join(root, 'api', 'server');
   const buildDir = join(serverDir, 'build');
   if (clean && existsSync(buildDir)) {
-    spawnSync(process.platform === 'win32' ? 'rmdir' : 'rm',
-      process.platform === 'win32' ? ['/s', '/q', buildDir] : ['-rf', buildDir], { stdio: 'ignore' });
+    // Cross-platform recursive delete. (spawnSync('rmdir', …) fails on Windows —
+    // rmdir is a cmd.exe builtin, not an executable, so it ENOENTs without a shell.)
+    rmSync(buildDir, { recursive: true, force: true });
   }
   console.log(`${symbols.arrow} Configuring (Release)…`);
   let r = spawnSync('cmake', ['-S', serverDir, '-B', buildDir, '-DCMAKE_BUILD_TYPE=Release'], { stdio: 'inherit' });

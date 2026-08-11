@@ -16,10 +16,10 @@ device layer lives in [`../../api/server/src/device/`](../../api/server/src/devi
 ## How the sources get here
 
 They ship inside the Camera Remote SDK download (`app/` folder) and are placed
-automatically by the extraction helper:
+automatically by `crsdk install`:
 
 ```bash
-./scripts/extract-sdk.sh /path/to/CrSDK.zip macos
+./crsdk install --zip /path/to/CrSDK.zip
 ```
 
 See [../../docs/SDK_SETUP.md](../../docs/SDK_SETUP.md) for the full setup,

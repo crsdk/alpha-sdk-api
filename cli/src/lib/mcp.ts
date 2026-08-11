@@ -130,9 +130,12 @@ async function httpPing(url: string, timeout = 5000): Promise<boolean> {
 
 function checkClaudeCodeConnection(serverKey: string): boolean {
   try {
-    const output = execSync('claude mcp list 2>/dev/null', {
+    // Suppress stderr via stdio (portable) instead of a POSIX `2>/dev/null`
+    // redirection, which cmd.exe does not understand on Windows.
+    const output = execSync('claude mcp list', {
       encoding: 'utf-8',
       timeout: 10000,
+      stdio: ['ignore', 'pipe', 'ignore'],
     });
     return output.includes(serverKey) && output.includes('Connected');
   } catch {

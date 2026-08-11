@@ -118,8 +118,8 @@ Every feature should update:
 - MCP tools — see [Updating the MCP camera-control server](#updating-the-mcp-camera-control-server) below.
 - Docs — see [Updating the docs](#updating-the-docs) below.
 
-Do not edit `shared/core/` — those are Sony's stock SDK sample sources, fetched
-locally via `scripts/extract-sdk.sh` and not tracked in this repository.
+Do not edit `shared/core/` — those are Sony's stock SDK sample sources, placed
+locally by `crsdk install` and not tracked in this repository.
 
 ## Updating the MCP Camera-Control Server
 

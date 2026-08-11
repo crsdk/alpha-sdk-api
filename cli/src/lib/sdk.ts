@@ -1,6 +1,6 @@
 // =============================================================================
 // SDK lifecycle — accept Sony's EULA, extract the SDK into the repo's shared/
-// layout (via scripts/extract-sdk.sh), and archive/swap SDK versions.
+// layout (natively, see extract.ts), and archive/swap SDK versions.
 //
 // Reconstructed from the standalone @alpha-sdk/crsdk CLI and retargeted from
 // Sony's cpp-sample/ layout to this repo's shared/ layout (see docs/SDK_SETUP.md).
@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { colors, symbols } from './theme.js';
 import { printCheck, printHeader, printKV, printSection } from './components.js';
+import { extractSdk, type SdkPlatform } from './extract.js';
 
 export const SONY_LICENSE_URL =
   'https://support.d-imaging.sony.co.jp/app/sdk/licenseagreement_d/en.html';
@@ -22,11 +23,10 @@ const paths = (root: string) => ({
   archive: join(root, 'shared', 'sdk-archive'),
   license: join(root, 'shared', '.license-accepted'),
   meta: join(root, 'shared', '.sdk-meta.json'),
-  extractScript: join(root, 'scripts', 'extract-sdk.sh'),
 });
 
-/** Map the host to the token scripts/extract-sdk.sh expects. */
-export function detectPlatform(): string {
+/** Map the host to the SDK layout token used by the extractor. */
+export function detectPlatform(): SdkPlatform {
   const p = process.platform, a = process.arch;
   if (p === 'darwin') return 'macos';
   if (p === 'linux') return a === 'arm64' ? 'linux-arm64' : a === 'arm' ? 'linux-arm' : 'linux-x64';
@@ -93,17 +93,22 @@ export async function install(opts: InstallOpts): Promise<void> {
   const p = paths(root);
 
   if (!existsSync(opts.zip)) { console.log(`  ${symbols.cross} Zip not found: ${opts.zip}`); process.exitCode = 1; return; }
-  if (!existsSync(p.extractScript)) { console.log(`  ${symbols.cross} scripts/extract-sdk.sh not found — run inside the repo.`); process.exitCode = 1; return; }
 
   if (!(await acceptEula(root))) { process.exitCode = 1; return; }
 
-  const platform = opts.platform ?? detectPlatform();
+  const platform = (opts.platform as SdkPlatform | undefined) ?? detectPlatform();
   await printSection('Extracting');
   await printKV('Zip', opts.zip);
   await printKV('Platform', platform);
 
-  const r = spawnSync('bash', [p.extractScript, opts.zip, platform], { stdio: 'inherit', cwd: root });
-  if (r.status !== 0) { console.log(`  ${symbols.cross} Extraction failed. See docs/SDK_SETUP.md.`); process.exitCode = 1; return; }
+  // Native, cross-platform extraction (no bash / unzip binary required).
+  try {
+    extractSdk({ root, zip: opts.zip, platform });
+  } catch (err) {
+    console.log(`  ${symbols.cross} Extraction failed: ${(err as Error).message}`);
+    console.log(`  See ${colors.accent('docs/SDK_SETUP.md')} for the expected archive layout.`);
+    process.exitCode = 1; return;
+  }
 
   clearQuarantineMac(root);
   writeFileSync(p.meta, JSON.stringify({ version: versionFromZip(opts.zip), platform, installedAt: new Date().toISOString() }, null, 2) + '\n');

@@ -73,7 +73,7 @@ shared/binaries/
 # CrDebugString, MessageDefine, ConnectionInfo, Text, OpenCVWrapper). This code
 # is part of Sony's Camera Remote SDK and is NOT redistributed here. Each
 # contributor obtains it from the SDK download (see docs/SDK_SETUP.md); it is
-# placed into shared/core/ by scripts/extract-sdk.sh. Only CMakeLists.txt and
+# placed into shared/core/ by `crsdk install`. Only CMakeLists.txt and
 # README.md are tracked in this folder.
 shared/core/*.cpp
 shared/core/*.h

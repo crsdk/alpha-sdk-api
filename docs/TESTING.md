@@ -23,7 +23,6 @@ This coverage command is intentionally scoped to `tests/unit/src/lib/request-hel
 Run shell syntax checks for the API scripts:
 
 ```bash
-bash -n scripts/extract-sdk.sh
 bash -n api/tests/api_tests.sh
 ```
 

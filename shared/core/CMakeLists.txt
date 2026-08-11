@@ -56,7 +56,7 @@ endif()
 # implementation is dead code here. Excluding it also avoids the sample's
 # Windows/MSVC wchar_t / std::filesystem issues (the old fork carried private
 # patches for those; stock does not). CameraDevice.h is still required as a
-# header by the stock helpers below and is fetched by extract-sdk.sh.
+# header by the stock helpers below and is placed by `crsdk install`.
 set(CORE_SOURCES
     PropertyValueTable.cpp
     ConnectionInfo.cpp
@@ -78,8 +78,8 @@ set(CORE_HEADERS
 
 # The wrapper sources are Sony sample-derived and are not tracked in this
 # public repository. They are bundled in the Camera Remote SDK download and
-# placed here by scripts/extract-sdk.sh. Fail early with a clear pointer if a
-# contributor tries to build before running the extraction helper.
+# placed here by `crsdk install`. Fail early with a clear pointer if a
+# contributor tries to build before installing the SDK.
 set(CORE_MISSING_SOURCES "")
 foreach(CORE_FILE IN LISTS CORE_SOURCES CORE_HEADERS)
     if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${CORE_FILE}")
@@ -94,7 +94,7 @@ if(CORE_MISSING_SOURCES)
         "Expected placement: shared/core/*.cpp and shared/core/*.h\n"
         "Missing files:\n  ${CORE_MISSING_SOURCES_TEXT}\n"
         "These files ship inside the Camera Remote SDK download and are placed\n"
-        "by scripts/extract-sdk.sh. Follow ${SDK_SETUP_DOC}."
+        "by `crsdk install`. Follow ${SDK_SETUP_DOC}."
     )
 endif()
 
