@@ -80,20 +80,25 @@ shared/opencv/include/opencv2/
 
 The extraction helper below copies these headers from Sony's SDK sample archive when they are not already present.
 
-## Extraction Helper
+## Extraction
 
-The repository includes:
+Run the extraction through the [`crsdk` CLI](../cli/README.md) — it accepts Sony's
+EULA, detects your platform, extracts the SDK into the layout below, and (on macOS)
+clears quarantine + ad-hoc signs the dylibs:
 
 ```bash
-./scripts/extract-sdk.sh /path/to/CrSDK.zip macos
-./scripts/extract-sdk.sh /path/to/CrSDK.zip linux-x64
-./scripts/extract-sdk.sh /path/to/CrSDK.zip linux-arm64
-./scripts/extract-sdk.sh /path/to/CrSDK.zip linux-arm
-./scripts/extract-sdk.sh /path/to/CrSDK.zip win32-x64
+crsdk install --zip /path/to/CrSDK.zip
 ```
 
-The script copies SDK headers into `shared/sdk/include/`, SDK libraries into `shared/sdk/lib/`, adapter libraries into `shared/sdk/lib/CrAdapter/`, OpenCV libraries into `shared/opencv/`, and the SDK integration wrapper sources into `shared/core/`.
-It also copies OpenCV headers into `shared/opencv/include/` when that directory is missing.
+Download the zip first from the
+[official Sony download page](https://support.d-imaging.sony.co.jp/app/sdk/en/index.html).
+This copies SDK headers into `shared/sdk/include/`, SDK libraries into `shared/sdk/lib/`,
+adapter libraries into `shared/sdk/lib/CrAdapter/`, OpenCV libraries into `shared/opencv/`,
+and the SDK integration wrapper sources into `shared/core/` — plus OpenCV headers into
+`shared/opencv/include/` when that directory is missing.
+
+(`crsdk install` runs `scripts/extract-sdk.sh` internally; you should not need to call the
+script directly.)
 
 ## macOS Quarantine and Signing
 

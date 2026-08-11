@@ -14,12 +14,12 @@ script that read the Mintlify MDX in the old `docs` repository. **That script
 has been retired.** Editing it and re-running it would overwrite everything
 here, including changes that were never in the Mintlify source:
 
-- The typed client SDK pages were removed. There are no published
-  `@alpha-sdk/*` packages on npm or PyPI, and no `alpha-sdk-client` on PyPI.
-  Clients are generated from `api/openapi.yaml` instead — see `sdk/overview.mdx`.
-- The `CameraWebAPI` MCP server was removed. It was served by Mintlify itself
-  (`/_mintlify/mcp/...` at `crsdk.app/mcp`) and stops existing when that account
-  is closed. The other two MCP servers are hosted separately and are unaffected.
+- The client SDKs are generated from `api/openapi.yaml` (not hand-maintained).
+  The TypeScript (`@alpha-sdk/client`, npm) and Python (`alpha-sdk-client`, PyPI)
+  clients are published; other languages generate their own — see `sdk/overview.mdx`.
+- The `CameraWebAPI` MCP server was removed — it was served by the retired
+  Mintlify account. The other two documentation MCP servers are hosted separately
+  and are unaffected.
 - npm and PyPI distribution is fully retired, including the `camera-server`
   CLI. The CLI section was removed entirely; `web-api/server.mdx` describes the
   `CameraWebApp` binary and its real flags (`--port` / `-p` only — checked

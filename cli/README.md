@@ -1,6 +1,6 @@
 # crsdk — Alpha Camera REST API developer CLI
 
-The [Alpha Camera REST API](https://crsdk.app) build-from-source companion. It
+The [Alpha Camera REST API](https://crsdk.github.io/alpha-sdk-api) build-from-source companion. It
 accepts Sony's SDK license and unpacks the SDK, checks your toolchain, builds the
 native REST server, runs it, and wires up docs MCP servers.
 

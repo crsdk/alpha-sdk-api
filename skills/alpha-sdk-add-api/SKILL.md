@@ -18,7 +18,7 @@ Use this sequence for an unsupported SDK feature request:
 3. Research API compatibility:
    - Use `CameraRemoteSDK` MCP for exact SDK symbols, enums, operation codes, callbacks, error codes, and sample code.
    - Use `CameraHelp` MCP for model-specific behavior and menu terminology.
-   - Use `CameraWebAPI` MCP, hosted docs at `https://crsdk.app/`, and local `api/openapi.yaml` for existing REST naming.
+   - Read `api/openapi.yaml` (the source of truth) and the [hosted docs](https://crsdk.github.io/alpha-sdk-api/) for existing REST naming.
 4. Choose the SDK API or SDK property to add. Record dependent APIs, required camera state, required connection mode, and expected callbacks.
 5. Classify the feature as a property, action, operation, callback/event, file-transfer flow, live-view flow, or client-only helper.
 6. Inspect current implementation points before editing:
@@ -27,9 +27,9 @@ Use this sequence for an unsupported SDK feature request:
    - `api/server/src/CameraWebController.*`
    - `api/server/src/CameraWebServer.*`
    - `api/openapi.yaml`
-   - Hosted REST docs at `https://crsdk.app/`
+   - `site/src/content/docs/` (the docs site, in this repo)
 7. Implement the smallest API surface consistent with existing naming. Use kebab-case REST names.
-8. Update OpenAPI in the same change. If public docs or examples need to change, update the hosted docs source outside this repository.
+8. Update OpenAPI in the same change. If public docs or examples need to change, update `site/src/content/docs/` in the same PR — the docs live in this repo.
 9. Update supported public clients in their owning SDK/client repositories when generated client behavior changes. Do not add generated client packages or example apps to this repository.
 10. Add tests or hardware/manual test notes when automation is not possible.
 11. Before finishing, check that new callbacks, worker-thread work, and SDK handles have bounded lifetimes and shutdown cleanup.

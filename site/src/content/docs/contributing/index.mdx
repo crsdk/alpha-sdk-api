@@ -29,9 +29,14 @@ manager or CI job can fetch it for you.
 
 2. **Download the Camera Remote SDK from Sony**
 
-   Accept the licence on Sony's download page, then place the files as
-   described in `docs/SDK_SETUP.md`. The helper `scripts/extract-sdk.sh`
-   unpacks a download into the right layout.
+   Accept the licence on the
+   [official Sony download page](https://support.d-imaging.sony.co.jp/app/sdk/en/index.html),
+   then place it with the [`crsdk` CLI](/alpha-sdk-api/cli/) — it extracts the SDK
+   into the right layout for you:
+
+   ```bash
+   crsdk install --zip /path/to/CrSDK.zip
+   ```
 
 3. **Install build prerequisites**
 
@@ -42,9 +47,7 @@ manager or CI job can fetch it for you.
 4. **Build the server**
 
    ```bash
-   cd api/server && mkdir -p build && cd build
-   cmake -DCMAKE_BUILD_TYPE=Release ..
-   cmake --build . --config Release
+   crsdk build
    ```
 
 5. **Run it**

@@ -19,10 +19,11 @@ Launch the native camera server binary from your app, wait for it to be ready, a
 
 ## Where does the binary come from?
 
-`CameraWebApp` is built from source — see `api/distribution/INSTALL_MACOS.md`
-in the repository. The Sony Camera Remote SDK it links against can only be
-obtained by accepting Sony's licence on their download page, so there is no
-package manager that can fetch it for you.
+`CameraWebApp` is built from source with the [`crsdk` CLI](/alpha-sdk-api/cli/)
+(`crsdk install --zip <sony-sdk.zip>`, then `crsdk build`). The Sony Camera Remote
+SDK it links against must be downloaded by accepting Sony's licence on the
+[official Sony download page](https://support.d-imaging.sony.co.jp/app/sdk/en/index.html),
+so there is no package manager that can fetch it for you.
 
 For a self-contained app, ship the binary you built alongside your application:
 

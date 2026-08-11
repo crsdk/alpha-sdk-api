@@ -70,7 +70,7 @@ the generated client, that is your breaking change surfacing.
 ## Local Setup
 
 1. Clone the public repository.
-2. Download the Sony Camera Remote SDK separately from Sony.
+2. Download the Sony Camera Remote SDK from the [official Sony download page](https://support.d-imaging.sony.co.jp/app/sdk/en/index.html).
 3. Place SDK files using [docs/SDK_SETUP.md](docs/SDK_SETUP.md).
 4. Install platform dependencies for CMake and Node.js as needed. (JSON is vendored in `api/server/third_party/jsoncpp`; there is no OpenSSL or external jsoncpp dependency.)
 5. Build the C++ server from `api/server`.

@@ -8,7 +8,7 @@ This MIT-licensed open-source repository lets customers add REST API coverage fo
 
 Local SDK/vendor artifacts are intentionally excluded:
 
-- Sony Camera Remote SDK files and binaries are not redistributed. Contributors must download the SDK from Sony separately.
+- Sony Camera Remote SDK files and binaries are not redistributed. Download the SDK yourself from the [official Sony download page](https://support.d-imaging.sony.co.jp/app/sdk/en/index.html).
 - The `shared/core/` SDK integration wrapper (`CameraDevice`, `PropertyValueTable`, etc.) is Sony sample-derived and is also not redistributed. It ships in the SDK download and is placed locally by the extraction helper; only its `CMakeLists.txt` and `README.md` are tracked here.
 - OpenCV headers and runtime files copied from the SDK sample archive are local setup artifacts and are ignored.
 - Generated client-SDK output and build folders are excluded — the clients are regenerated from `api/openapi.yaml`, not committed. See the hosted [SDK overview](https://crsdk.github.io/alpha-sdk-api/sdk/overview/).
@@ -34,7 +34,7 @@ Hosted docs (GitHub Pages — the site has no custom domain):
 
 ## SDK Setup
 
-Sony SDK files are not distributed in this repository. See [docs/SDK_SETUP.md](docs/SDK_SETUP.md) for the expected folder layout and extraction instructions, or run `./crsdk install --zip <sony-sdk.zip>`.
+Sony SDK files are not distributed in this repository. Download the SDK from the [official Sony download page](https://support.d-imaging.sony.co.jp/app/sdk/en/index.html), then place it with `crsdk install --zip <sony-sdk.zip>` (see [docs/SDK_SETUP.md](docs/SDK_SETUP.md) for the expected folder layout).
 
 ## Build
 
