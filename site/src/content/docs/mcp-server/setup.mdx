@@ -20,7 +20,6 @@ Both servers are compatible with Anthropic's LLMs (claude.ai, Claude Mobile, Cla
 These tools are still in Private Beta. Please do not share the MCP server URLs with others.
 :::
 
-
 ---
 
 ## Setup Instructions
@@ -75,10 +74,6 @@ Disable the **search** and **fetch** tools before prompting. These tools are int
 :::tip
 We recommend setting all tool permissions to **allow unsupervised** when first using the servers. Based on your observations, you can disable tools and change permissions to help Claude's searches align better with your preferences.
 :::
-
-4. **Configure System Prompt (Optional but Recommended)**
-
-   A system prompt significantly improves performance. See the [System Prompt](/alpha-sdk-api/mcp-server/system-prompt/) page for setup instructions.
 
 ### Using the MCP Servers
 
@@ -142,10 +137,6 @@ Verify they're connected:
 ```bash
 claude mcp list
 ```
-
-:::tip
-For system prompt setup, see the [System Prompt](/alpha-sdk-api/mcp-server/system-prompt/) page.
-:::
 
 ---
 
@@ -334,10 +325,6 @@ Repeat these steps for each server you want to add:
 5. Set **Transport Type** to `command` (stdio)
 6. Click **Save**
 7. Verify the server shows as connected in the MCP settings panel
-
-:::tip
-For system prompt setup, see the [System Prompt](/alpha-sdk-api/mcp-server/system-prompt/) page.
-:::
 
 ---
 
