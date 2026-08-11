@@ -5,7 +5,7 @@ description: "A map of the developer stack — the HTTP server, generated client
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-The Sony Developer Platform (unofficial) consists of the **Alpha Camera REST API** and supporting tooling, including the API playground and documentation MCP servers. Most developers should use the community-developed REST API, calling it over HTTP or through a client generated from the OpenAPI specification; Sony's official native SDKs are best if you need direct C\+\+ / C# integration to achieve best device performance. 
+The Sony Developer Platform (unofficial) consists of the **Alpha Camera REST API** and supporting tooling, including the API playground and documentation MCP servers. Most developers should use the community-developed REST API — call it over HTTP, or use the published **TypeScript (`@alpha-sdk/client`) and Python (`alpha-sdk-client`)** clients (or generate your own for any other language from the OpenAPI spec). Sony's official native SDKs are best if you need direct C\+\+ / C# integration to achieve best device performance.
 
 ## The stack
 
@@ -19,7 +19,7 @@ The Sony Developer Platform (unofficial) consists of the **Alpha Camera REST API
 ## Picking a layer
 
 <CardGrid>
-<LinkCard title="I want a typed client" href="/alpha-sdk-api/sdk/overview/" description="Generate one for your language directly from the OpenAPI specification." />
+<LinkCard title="I want a typed client" href="/alpha-sdk-api/sdk/overview/" description="Install the published TypeScript / Python client, or generate one for any other language from the spec." />
 
   <LinkCard title="I just want to call HTTP" href="/alpha-sdk-api/web-api/overview/" description="Call the REST API directly from any language or tool that speaks HTTP." />
 
