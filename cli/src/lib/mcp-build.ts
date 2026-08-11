@@ -16,7 +16,7 @@
 // =============================================================================
 
 import { existsSync, rmSync, cpSync, mkdtempSync, mkdirSync, readdirSync, chmodSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { colors, symbols } from './theme.js';
@@ -92,16 +92,33 @@ function opencvLibDir(root: string): string | null {
   return null;
 }
 
-/** Copy every shared lib (and any CrAdapter subdir) from src into dest, flat. */
+/**
+ * Where the SDK looks for its USB/PTP transport plugins, relative to the dir
+ * holding the executable and Cr_Core.
+ *
+ * Windows/Linux: a flat CrAdapter/ sibling of Cr_Core. macOS is different —
+ * libCr_Core resolves adapters through the app-bundle layout, so they must land
+ * in Contents/Frameworks/CrAdapter/ (what CMake produces in api/server/build).
+ * Get this wrong on macOS and the server still starts, binds, and reports the
+ * SDK as initialized — it just has no transport, so discovery returns [].
+ */
+function adapterDest(dest: string): string {
+  return process.platform === 'darwin'
+    ? join(dest, 'Contents', 'Frameworks', 'CrAdapter')
+    : join(dest, 'CrAdapter');
+}
+
+/** Copy every shared lib (plus the CrAdapter plugins) from src into dest. */
 function copyLibs(src: string, dest: string): number {
   if (!existsSync(src)) return 0;
   mkdirSync(dest, { recursive: true });
   let n = 0;
   for (const e of readdirSync(src, { withFileTypes: true })) {
     if (e.isDirectory() && e.name === 'CrAdapter') {
-      // The SDK loads its USB/PTP transport plugins from a CrAdapter/ dir that
-      // must sit next to libCr_Core — preserve the subdir verbatim.
-      cpSync(join(src, e.name), join(dest, e.name), { recursive: true });
+      // Preserve the subdir verbatim, at the per-platform path the SDK probes.
+      const target = adapterDest(dest);
+      mkdirSync(dirname(target), { recursive: true });
+      cpSync(join(src, e.name), target, { recursive: true });
       n += readdirSync(join(src, e.name)).length;
     } else if (e.isFile() && e.name.includes(libExt())) {
       cpSync(join(src, e.name), join(dest, e.name));
@@ -127,8 +144,10 @@ function codesignMac(dir: string): void {
  * building it first if it isn't built. Returns true on success.
  *
  * The MCP server spawns the binary with cwd = its own directory, and the binary
- * carries an @executable_path rpath, so co-locating every dylib (plus the SDK's
- * CrAdapter/) beside the executable makes the bundle self-resolving on any host.
+ * carries an @executable_path rpath, so co-locating every dylib beside the
+ * executable makes the bundle self-resolving on any host. The SDK's CrAdapter
+ * plugins are the exception — they go wherever adapterDest() says, which is not
+ * the same place on macOS as on Windows/Linux.
  */
 function bundleServerBinary(root: string, stage: string): boolean {
   let bin = serverBinary(root);
