@@ -78,13 +78,23 @@ export default defineConfig({
           ],
         },
         {
-          label: 'MCP Server',
+          label: 'MCP Servers',
           items: [
             { slug: 'mcp-server/overview' },
-            { slug: 'mcp-server/setup' },
-            { slug: 'mcp-server/camera-control' },
-            { slug: 'mcp-server/system-prompt' },
-            { slug: 'mcp-server/troubleshooting' },
+            {
+              label: 'Docs MCP',
+              items: [
+                { slug: 'mcp-server/setup' },
+                { slug: 'mcp-server/system-prompt' },
+                { slug: 'mcp-server/troubleshooting' },
+              ],
+            },
+            {
+              label: 'Camera Control MCP',
+              items: [
+                { slug: 'mcp-server/camera-control' },
+              ],
+            },
           ],
         },
         {
