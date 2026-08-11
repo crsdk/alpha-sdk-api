@@ -107,3 +107,30 @@ jobs:
       - name: Unit tests
         working-directory: mcp
         run: npm test
+
+  # When a PR changes the OpenAPI contract, the docs must change too. The MCP
+  # side is already enforced by the `mcp` job's codegen-drift gate; this covers
+  # the documentation site. See CONTRIBUTING.md and the alpha-sdk-sync-artifacts
+  # skill.
+  spec-docs-sync:
+    name: Spec ↔ docs sync (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require a docs update when api/openapi.yaml changes
+        run: |
+          git fetch origin "$GITHUB_BASE_REF" --depth=1
+          changed=$(git diff --name-only "origin/$GITHUB_BASE_REF...HEAD")
+          if echo "$changed" | grep -qx 'api/openapi.yaml'; then
+            if echo "$changed" | grep -qE '^(site/src/content/docs/|docs/)'; then
+              echo "OK: the spec change includes a docs update."
+            else
+              echo "::error::api/openapi.yaml changed but no docs were updated. Update site/src/content/docs/ (or docs/) in the same PR — see CONTRIBUTING.md and the alpha-sdk-sync-artifacts skill."
+              exit 1
+            fi
+          else
+            echo "No spec change in this PR; nothing to check."
+          fi
