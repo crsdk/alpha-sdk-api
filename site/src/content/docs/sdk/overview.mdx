@@ -1,30 +1,73 @@
 ---
-title: "Generate a client"
-description: "Generate a typed client for any language directly from the OpenAPI specification"
+title: "Client SDKs"
+description: "Install the published TypeScript/Python clients, start from an example app, or generate a client for any other language"
 ---
 
 import { CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
 
-There are no hand-maintained client libraries. The API is described by an
-OpenAPI 3.1 document, and you generate a client for whatever language you are
-working in directly from it.
+Every client is generated from the API's OpenAPI 3.1 document — no client is
+hand-maintained, so it always tracks the real server. For **TypeScript and
+Python** we publish that generated client for you; for **any other language** you
+generate one yourself from the same spec.
 
-That document is the same one the [API reference](/alpha-sdk-api/api-reference/)
-renders, and it lives beside the server that implements it, so a generated
-client tracks the real API rather than a separately maintained copy of it.
+The spec lives beside the server that implements it and is the one the
+[API reference](/alpha-sdk-api/api-reference/) renders:
 
 ```
 https://crsdk.github.io/alpha-sdk-api/api-reference/openapi.yaml
 ```
 
-:::note
-Generating from the spec is the supported path for every language. There is no
-package to install from npm, PyPI or SwiftPM — a generator gives you the same
-typed surface without a package that has to be kept in step with the server by
-hand.
-:::
+## Published clients
 
-## Generate
+The TypeScript and Python clients are generated from the spec with
+[Fern](https://buildwithfern.com) and published — install them like any package:
+
+<Tabs syncKey="lang">
+<TabItem label="TypeScript">
+
+```bash
+npm install @alpha-sdk/client
+```
+
+```ts
+import { AlphaSDKClient } from "@alpha-sdk/client";
+
+const client = new AlphaSDKClient({ environment: "http://localhost:8080" });
+const { cameras } = await client.cameras.list();
+```
+
+</TabItem>
+<TabItem label="Python">
+
+```bash
+pip install alpha-sdk-client
+```
+
+```python
+from alpha_sdk_client import AlphaSDKClient
+
+client = AlphaSDKClient(base_url="http://localhost:8080")
+cameras = client.cameras.list()
+```
+
+</TabItem>
+</Tabs>
+
+Both are versioned together and released from the spec — see
+[how the clients are generated and published](https://github.com/crsdk/alpha-sdk-api/blob/main/docs/SDK_GENERATION.md).
+
+## Start from an example app
+
+Full working apps you can run and read, each wired to the published client:
+
+<CardGrid>
+  <LinkCard title="TypeScript example (Next.js)" href="https://github.com/crsdk/alpha-sdk-typescript" description="A camera-control web UI: connect, adjust settings, live view, shoot, browse the SD card." />
+  <LinkCard title="Python example" href="https://github.com/crsdk/alpha-sdk-python" description="A notebook/data-collection script: connect, snapshot properties, pull live-view frames." />
+</CardGrid>
+
+## Generate for another language
+
+Point any OpenAPI generator at the specification. A few common ones:
 
 Point any OpenAPI generator at the specification. A few common ones:
 
@@ -44,15 +87,6 @@ npx @hey-api/openapi-ts \
 pip install openapi-python-client
 openapi-python-client generate \
   --url https://crsdk.github.io/alpha-sdk-api/api-reference/openapi.yaml
-```
-
-</TabItem>
-<TabItem label="Swift">
-
-```bash
-# Add the Swift OpenAPI Generator plugin to Package.swift, then place the
-# specification at Sources/<Target>/openapi.yaml and build.
-swift package plugin --allow-writing-to-package-directory generate-code-from-openapi
 ```
 
 </TabItem>
@@ -92,8 +126,8 @@ plain request/response operations:
 
 - **Server-Sent Events** — the two event streams are long-lived and most
   generators will not produce anything usable for them. Consume them with native
-  `EventSource` (browser), `URLSession.bytes(for:)` (Swift), or `httpx.stream`
-  (Python). See the [SSE recipe](/alpha-sdk-api/sdk/recipes/sse-events/).
+  `EventSource` (browser) or `httpx.stream` (Python). See the
+  [SSE recipe](/alpha-sdk-api/sdk/recipes/sse-events/).
 - **Discovery, reconnect and lifecycle handling** — application concerns rather
   than API surface. The recipes below cover the usual patterns.
 
