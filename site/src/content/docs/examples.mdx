@@ -1,0 +1,32 @@
+---
+title: "Examples"
+description: "Full example apps you can clone and run, plus copy-paste recipes for common client patterns"
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Two kinds of example: **full apps** you can clone and run, and short **recipes**
+for individual patterns.
+
+## Example apps
+
+Complete, runnable apps wired to the published client SDK:
+
+<CardGrid>
+  <LinkCard title="TypeScript example (Next.js)" href="https://github.com/crsdk/alpha-sdk-typescript" description="A camera-control web UI: connect, adjust settings, live view, shoot, browse the SD card." />
+  <LinkCard title="Python example" href="https://github.com/crsdk/alpha-sdk-python" description="A notebook / data-collection script: connect, snapshot properties, pull live-view frames." />
+</CardGrid>
+
+## Recipes
+
+Small, focused snippets for patterns that sit outside the generated client (SSE
+streams, live-view polling, lifecycle handling):
+
+<CardGrid>
+  <LinkCard title="SSE event consumer" href="/alpha-sdk-api/sdk/recipes/sse-events/" description="React in real time to propertyChanged, downloadComplete, transferProgress." />
+  <LinkCard title="Live-view JPEG polling" href="/alpha-sdk-api/sdk/recipes/live-view-polling/" description="Pull a frame every ~66ms and render it." />
+  <LinkCard title="Server subprocess" href="/alpha-sdk-api/sdk/recipes/server-subprocess/" description="Spawn and supervise the native server from your own runtime." />
+  <LinkCard title="Discovery + reconnect" href="/alpha-sdk-api/sdk/recipes/discovery-reconnect/" description="Poll /api/cameras, track which is connected, handle hot-plug." />
+  <LinkCard title="Retry + backoff" href="/alpha-sdk-api/sdk/recipes/retry-backoff/" description="Exponential backoff for flaky connect and SD card calls." />
+  <LinkCard title="React hook" href="/alpha-sdk-api/sdk/recipes/react-hook/" description="useCamera() — bind one camera's connection and property state." />
+</CardGrid>
