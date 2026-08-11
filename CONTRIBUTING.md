@@ -37,6 +37,36 @@ npx fern-api@5.91.0 generate --group python-sdk --local
 Full details, the release runbook, and one-time owner setup are in
 [docs/SDK_GENERATION.md](docs/SDK_GENERATION.md).
 
+## Backwards Compatibility
+
+`api/openapi.yaml` is a **public contract**. Published clients
+(`@alpha-sdk/client`, `alpha-sdk-client`), generated clients in other languages,
+the MCP camera-control tools, and existing integrations are all derived from it —
+so a breaking spec change breaks everyone downstream at once. Treat compatibility
+as a requirement, not a preference.
+
+**Prefer additive changes.** New endpoints, new response fields, and new optional
+request fields are safe. Design for them.
+
+**Do not, without an explicit maintainer-approved breaking-change plan:**
+
+- remove or rename an endpoint, path parameter, field, or enum value;
+- change the type of an existing field, or make an optional field required;
+- tighten validation on existing input (a request that worked must keep working);
+- change the shape or status code of an existing response;
+- repurpose an existing name to mean something new.
+
+**Deprecate, don't delete.** To retire something, mark it `deprecated: true` in the
+spec, keep it working, and point to the replacement. Removal is a separate,
+announced, major-version step.
+
+**If a breaking change is genuinely unavoidable**, call it out explicitly in the PR
+(what breaks, who it affects, the migration path). It needs maintainer sign-off and
+a coordinated version bump — it is never a quiet side effect of another change.
+
+Review the **SDK Preview** artifact on your PR: if it renames or removes anything in
+the generated client, that is your breaking change surfacing.
+
 ## Local Setup
 
 1. Clone the public repository.
@@ -129,6 +159,7 @@ Use [docs/MCP_SERVERS.md](docs/MCP_SERVERS.md) to configure the documentation MC
 
 - The change does not add Sony SDK files, SDK binaries, generated build folders, camera media, or local credentials.
 - The API contract and implementation match.
+- The change is backwards-compatible — no removed/renamed/retyped spec elements, no tightened validation (or it carries an approved breaking-change plan). The SDK Preview artifact shows only additions.
 - Public package names and install guidance match the [SDK overview](https://crsdk.github.io/alpha-sdk-api/sdk/overview/).
 - Unit/static checks and any relevant e2e checks from `docs/TESTING.md` were run, or skipped with a clear reason.
 - The feature has at least manual test notes. Hardware-dependent behavior should list camera model, firmware, connection mode, and SDK version.

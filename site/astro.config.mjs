@@ -46,6 +46,7 @@ export default defineConfig({
           attrs: { target: '_self' },
         },
         { label: 'Platform overview', slug: 'platform-overview' },
+        { label: 'crsdk CLI', slug: 'cli' },
         {
           label: 'REST API',
           items: [
