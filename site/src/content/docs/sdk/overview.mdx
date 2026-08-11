@@ -5,13 +5,9 @@ description: "Install the published TypeScript/Python clients, start from an exa
 
 import { CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
 
-Every client is generated from the API's OpenAPI 3.1 document — no client is
-hand-maintained, so it always tracks the real server. For **TypeScript and
-Python** we publish that generated client for you; for **any other language** you
-generate one yourself from the same spec.
-
-The spec lives beside the server that implements it and is the one the
-[API reference](/alpha-sdk-api/api-reference/) renders:
+There are **TypeScript and Python client SDKs**, installable via npm / pip. They're
+auto-generated from `api/openapi.yaml` on every PR, so they always track the real
+server. For any other language, generate your own client from the same spec:
 
 ```
 https://crsdk.github.io/alpha-sdk-api/api-reference/openapi.yaml
@@ -67,33 +63,33 @@ Full working apps you can run and read, each wired to the published client:
 
 ## Generate for another language
 
-Point any OpenAPI generator at the specification. A few common ones:
-
-Point any OpenAPI generator at the specification. A few common ones:
+TypeScript and Python are published above — for anything else, point an OpenAPI
+generator at the spec. A few examples:
 
 <Tabs syncKey="generator">
-<TabItem label="TypeScript">
+<TabItem label="Swift">
 
 ```bash
-npx @hey-api/openapi-ts \
-  -i https://crsdk.github.io/alpha-sdk-api/api-reference/openapi.yaml \
-  -o src/camera-client
+# Add the Swift OpenAPI Generator plugin to Package.swift, drop the spec at
+# Sources/<Target>/openapi.yaml, then build.
+swift package plugin --allow-writing-to-package-directory generate-code-from-openapi
 ```
 
 </TabItem>
-<TabItem label="Python">
+<TabItem label="C#">
 
 ```bash
-pip install openapi-python-client
-openapi-python-client generate \
-  --url https://crsdk.github.io/alpha-sdk-api/api-reference/openapi.yaml
+dotnet tool install --global Microsoft.OpenApi.Kiota
+kiota generate -l CSharp \
+  -d https://crsdk.github.io/alpha-sdk-api/api-reference/openapi.yaml \
+  -o ./CameraClient
 ```
 
 </TabItem>
 <TabItem label="Any language">
 
 ```bash
-# openapi-generator supports ~50 languages; swap the generator name.
+# openapi-generator supports ~50 languages; swap the -g target.
 npx @openapitools/openapi-generator-cli generate \
   -i https://crsdk.github.io/alpha-sdk-api/api-reference/openapi.yaml \
   -g go \

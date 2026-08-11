@@ -12,7 +12,7 @@ The Sony Developer Platform (unofficial) consists of the **Alpha Camera REST API
 | Layer | What it is | When to use it |
 | --- | --- | --- |
 | **Alpha Camera REST API** | A local HTTP and SSE server that wraps the native C\+\+ SDK. Built from source and run as the `CameraWebApp` binary | Cross-platform apps; multi-client setups; supervising the server from your own process |
-| **Generated clients** | Typed clients you generate from the OpenAPI specification, in whichever language you work in | Any application that would rather call typed methods than build URLs by hand |
+| **Client SDKs** | Published **TypeScript** (`@alpha-sdk/client`, npm) and **Python** (`alpha-sdk-client`, PyPI) clients; generate your own for any other language from the OpenAPI spec | Any application that would rather call typed methods than build URLs by hand |
 | **Docs MCP** | AI-assistant–consumable indexes of the SDK and Help Guide | Building with Claude, Cursor, or other AI-assisted development tools |
 | **Camera Control MCP** | A local MCP server that operates a connected camera in natural language (read settings, shoot, review frames) | Driving a real camera from Claude Desktop, or building agentic camera workflows |
 

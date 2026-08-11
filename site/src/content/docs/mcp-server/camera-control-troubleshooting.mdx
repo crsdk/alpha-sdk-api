@@ -1,0 +1,48 @@
+---
+title: "Camera Control — Troubleshooting"
+description: "Fixes for the local Camera Control MCP server: connection, writability, live view, SD card, settings, and hardware states"
+---
+
+Fixes specific to the **[Camera Control MCP](/alpha-sdk-api/mcp-server/camera-control/)** — the local server that operates a connected camera. (For the hosted research servers, see [Docs MCP troubleshooting](/alpha-sdk-api/mcp-server/troubleshooting/).)
+
+## Connection
+
+| Symptom | Fix |
+| --- | --- |
+| Tools present but every call fails to connect | The bundled server didn't start. Confirm a camera is attached and set to **PC Remote** mode, then run `crsdk doctor`. |
+| "No camera found" | Reconnect USB; make sure no other app (Imaging Edge, Creators' App, another Claude session) is holding the camera. |
+| You run your own REST server | Set **Camera server URL** in the extension settings; the bundle then adopts that server instead of spawning its own. |
+| Camera keeps disconnecting | Try a different USB cable/port; connect with `reconnecting` enabled so the SDK re-establishes dropped links. |
+
+## Properties look read-only
+
+If `get_camera_state` / `get_property` report `writable: false` on most settings, the camera hasn't granted PC control yet. **Connect first** — the priority-key (`pc-remote`) handshake unlocks writability, and `connect_camera` does this for you. A body that reports `writable: false` with empty `available_values` almost always just needs the priority key claimed.
+
+## Live view looks stale or degenerate
+
+Right after connecting, the first live-view frames can be stale or blank while the camera settles — poll `get_live_frame` again a moment later rather than treating the first frame as the truth. Use the OSD overlay (`overlay: osd`) when you need the real histogram/exposure readout baked into the pixels.
+
+## Events flood the response
+
+Calling `poll_events` with `wait_s: 0` drains the **entire** buffered backlog, which can be large. Pass a `since_cursor` from a previous call to get only what's new, or `wait_s > 0` to long-poll for the next event.
+
+## SD card listing is empty or wrong
+
+`list_captures` reads one slot at a time and needs **remote-transfer** or **contents** mode. If a slot returns nothing, the card is likely in the other slot — try `slot: 1` and `slot: 2`. (Bodies with two slots often have the card in slot 2.)
+
+## Settings download / upload fails
+
+`snapshot_camera_settings` / `restore_camera_settings` require a memory card **in slot 1** on many bodies — the camera gates the feature on it. If it errors, check the card is in slot 1 and re-read the enable-status properties.
+
+## LUT import does nothing in a stills mode
+
+`import_lut` (and reading the LUT slot list) only works when the camera is in a **movie mode** — base-look import is disabled in stills modes. Switch the mode dial to movie, then import.
+
+## A capture won't fire
+
+- **"Internal temp. high"** in the live frame is a real hardware state — let the body cool; captures may be inhibited while it's hot.
+- If autofocus can't lock, the shutter won't fire on an AF capture. Retry with manual focus, or half-press to confirm AF before firing.
+
+## Still stuck
+
+Pull server health and recent logs with `get_server_diagnostics`, and confirm the session with `get_connection_status`. If the server itself won't start or the camera keeps dropping, surface the diagnostics rather than retrying in a loop.

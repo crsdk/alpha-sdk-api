@@ -93,6 +93,7 @@ export default defineConfig({
               label: 'Camera Control MCP',
               items: [
                 { slug: 'mcp-server/camera-control' },
+                { slug: 'mcp-server/camera-control-troubleshooting' },
               ],
             },
           ],
