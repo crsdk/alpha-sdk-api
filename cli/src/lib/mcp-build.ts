@@ -82,7 +82,8 @@ function libExt(): string {
 function opencvLibDir(root: string): string | null {
   const candidates =
     process.platform === 'darwin' ? [['Darwin', 'Release', 'macos', 'bin']] :
-    process.platform === 'win32' ? [['Windows', 'Release', 'x64', 'bin'], ['Windows', 'x64', 'vc17', 'bin']] :
+    // Must match the layout extract.ts writes: shared/opencv/Windows/x86_64/Release/bin
+    process.platform === 'win32' ? [['Windows', 'x86_64', 'Release', 'bin'], ['Windows', 'Release', 'x64', 'bin'], ['Windows', 'x64', 'vc17', 'bin']] :
     [['Linux', 'Release', 'x64', 'lib'], ['Linux', 'Release', 'aarch64', 'lib']];
   for (const rel of candidates) {
     const p = join(root, 'shared', 'opencv', ...rel);
