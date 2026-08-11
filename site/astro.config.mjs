@@ -63,13 +63,11 @@ export default defineConfig({
             { slug: 'web-api/settings' },
           ],
         },
-        {
-          label: 'Clients',
-          items: [{ slug: 'sdk/overview' }],
-        },
+        { label: 'Client SDKs', slug: 'sdk/overview' },
         {
           label: 'Examples',
           items: [
+            { label: 'Overview', slug: 'examples' },
             { slug: 'sdk/recipes/sse-events' },
             { slug: 'sdk/recipes/live-view-polling' },
             { slug: 'sdk/recipes/server-subprocess' },
@@ -92,8 +90,8 @@ export default defineConfig({
             {
               label: 'Camera Control MCP',
               items: [
-                { slug: 'mcp-server/camera-control' },
-                { slug: 'mcp-server/camera-control-troubleshooting' },
+                { label: 'Setup', slug: 'mcp-server/camera-control' },
+                { label: 'Troubleshooting', slug: 'mcp-server/camera-control-troubleshooting' },
               ],
             },
           ],

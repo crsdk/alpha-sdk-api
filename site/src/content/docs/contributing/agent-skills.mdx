@@ -5,10 +5,10 @@ description: "Repository skills that drive research, implementation, testing and
 
 import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 
-The repository ships four agent skills under `skills/`. They encode the parts of
+The repository ships five agent skills under `skills/`. They encode the parts of
 this project that are easy to get wrong and expensive to discover — which SDK
-call implements a feature, what must never be committed, what counts as a real
-test note.
+call implements a feature, what must be updated alongside it, what must never be
+committed, what counts as a real test note.
 
 An agent that loads them contributes the same way a person following
 [Adding camera coverage](/alpha-sdk-api/contributing/adding-endpoints/) would.
@@ -19,6 +19,7 @@ yourself.
 | --- | --- |
 | `alpha-sdk-doc-research` | Before implementing anything — research the SDK, camera help guides and Web API docs through the MCP servers |
 | `alpha-sdk-add-api` | Implementing a missing endpoint, property or action mapping |
+| `alpha-sdk-sync-artifacts` | After changing `api/openapi.yaml` — keep the docs and MCP tools in sync (the CI `spec-docs-sync` gate enforces it) |
 | `alpha-sdk-test` | Planning and running unit and end-to-end validation, including camera-backed `curl` checks |
 | `alpha-sdk-publish` | Checking CI and public-repository readiness before pushing |
 
