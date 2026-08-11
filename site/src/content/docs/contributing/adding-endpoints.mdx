@@ -71,6 +71,17 @@ The full walkthrough, including how to find the right SDK call, is in
 - **API reference docs** — the reference on this site renders from the spec; write
   a guide page only when usage isn't obvious from the contract.
 
+:::caution[Keep it backwards-compatible]
+Because all of the above derive from `api/openapi.yaml`, a breaking spec change
+breaks every downstream consumer at once. **Add, don't change:** new endpoints and
+new *optional* fields are safe. Do not remove or rename endpoints, parameters,
+fields, or enum values; retype a field; make an optional field required; tighten
+validation; or change an existing response. Deprecate (`deprecated: true`) instead
+of deleting. A genuinely unavoidable breaking change needs maintainer sign-off and
+a version bump — check the SDK Preview artifact, where a rename or removal in the
+generated client is your breaking change surfacing.
+:::
+
 ## Describe conditional behaviour honestly
 
 Several endpoints are not simply supported or unsupported — they depend on the

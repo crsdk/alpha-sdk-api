@@ -88,6 +88,25 @@ When adding routes in `CameraWebServer.cpp`, keep exact REST regex routes above
 legacy substring routes. The legacy block is intentionally broad for backward
 compatibility and can accidentally match newer endpoints if ordered first.
 
+## Backwards Compatibility
+
+`api/openapi.yaml` is a public contract. The generated clients, the MCP
+camera-control tools, and existing integrations all derive from it, so a breaking
+change to the spec breaks every downstream consumer at once.
+
+- **Add, don't change.** New endpoints, new response fields, and new *optional*
+  request fields are safe. Prefer them.
+- **Never** remove or rename an endpoint, parameter, field, or enum value; change
+  an existing field's type; make an optional field required; tighten validation on
+  existing input; or change an existing response's shape or status code.
+- **Deprecate instead of deleting** — mark it `deprecated: true`, keep it working,
+  and point to the replacement. Removal is a separate, announced major-version step.
+- A genuinely unavoidable breaking change needs maintainer sign-off and a
+  coordinated version bump, called out explicitly in the PR — never a side effect.
+
+Check the **SDK Preview** artifact on your PR: a rename or removal in the generated
+client is your breaking change surfacing.
+
 ## Tests
 
 Add or update tests at the right level:

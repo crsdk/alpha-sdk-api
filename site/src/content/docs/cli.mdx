@@ -1,0 +1,124 @@
+---
+title: "crsdk CLI"
+description: "The developer CLI — place the SDK, build and run the server, build the MCP bundle, and an interactive shell"
+---
+
+import { Steps, LinkCard } from '@astrojs/starlight/components';
+
+`crsdk` is the developer CLI for the build-from-source workflow: place the Sony
+SDK, compile and run the REST server, and build the camera-control MCP bundle. It
+ships **inside the repo** — there is nothing to install from npm — and you run it
+from the repo root with the `./crsdk` wrapper, which builds the CLI on first use.
+
+```bash
+git clone https://github.com/crsdk/alpha-sdk-api.git
+cd alpha-sdk-api
+./crsdk doctor    # first run also builds the CLI itself
+```
+
+## First run
+
+<Steps>
+
+1. **Place the SDK** — accept Sony's EULA and extract it into `shared/`:
+
+   ```bash
+   ./crsdk install --zip <sony-camera-remote-sdk.zip>
+   ```
+
+2. **Build the server:**
+
+   ```bash
+   ./crsdk build
+   ```
+
+3. **Run it** on `:8080`:
+
+   ```bash
+   ./crsdk start
+   ```
+
+</Steps>
+
+Check the toolchain, SDK, and build state at any time with `./crsdk doctor`.
+
+## Commands
+
+### SDK
+
+| Command | What it does |
+| --- | --- |
+| `install --zip <p>` | Accept Sony's EULA and extract the SDK into `shared/` |
+| `update --zip <p>` | Archive the current SDK, then install a new one |
+| `versions` | List the active and archived SDK versions |
+| `use <name>` | Swap an archived SDK version back into `shared/` |
+
+### Server
+
+| Command | What it does |
+| --- | --- |
+| `doctor` | Check toolchain, SDK, and build state |
+| `build [--clean]` | Compile the native REST server from source |
+| `upgrade` | `git pull` the repo, then rebuild the server |
+| `start [--port N]` | Run the built server (default `:8080`) |
+| `status` | Check whether the server is running |
+| `stop` | Stop a running server |
+
+### MCP camera-control bundle
+
+Builds the [Camera Control MCP](/alpha-sdk-api/mcp-server/camera-control/) server that lives in `mcp/`.
+
+| Command | What it does |
+| --- | --- |
+| `gen:mcp` | Regenerate the flat tools from `api/openapi.yaml` |
+| `build:mcp` | Compile `mcp/src` → `mcp/dist` |
+| `pack:mcp` | Build `alpha-camera.mcpb` for Claude Desktop |
+
+### Docs MCP
+
+| Command | What it does |
+| --- | --- |
+| `mcp status` | Show which [Docs MCP](/alpha-sdk-api/mcp-server/overview/) servers are configured |
+| `mcp install <agent> <scope>` | Add a docs MCP server for `claude-code` / `vscode` / `cursor`, at `user` or `project` scope |
+
+### Misc
+
+| Command | What it does |
+| --- | --- |
+| `tui` | Launch the interactive shell (also: bare `crsdk`) |
+| `help` | Show all commands |
+| `version` | Print the CLI version |
+
+## Interactive shell
+
+Running `crsdk` with no command in a terminal drops into a full-screen shell
+(`crsdk tui` launches it explicitly). It runs the same commands as above, with
+completion so you don't have to remember them.
+
+- **Type a command**, or press <kbd>/</kbd> to browse a **command palette**.
+- **↑ / ↓** move the selection; **Tab** or **Enter** accepts it and chains into the
+  next argument (e.g. `mcp` → `install` → agent → scope).
+- Output streams into the canvas above the input bar; **↑ / ↓** scroll it when no
+  palette is open.
+- **Esc** closes the palette, or exits the shell.
+- `start` in the shell launches the server in the background so the shell stays
+  responsive; stop it with `stop`.
+
+Without a terminal (e.g. in a script or CI), run commands directly —
+`crsdk tui` reports that it needs a TTY.
+
+## Connect vs. spawn
+
+The CLI runs the server; your app connects to it. Two patterns:
+
+- **Connect (default)** — run `./crsdk start`, then point your client at
+  `http://localhost:8080`.
+- **Spawn** — set `CRSDK_BINARY` to the built binary
+  (`api/server/build/CameraWebApp`) and let your app manage the server's
+  lifecycle. The [example apps](/alpha-sdk-api/sdk/overview/) show both.
+
+<LinkCard
+  title="Building from source in depth"
+  href="https://github.com/crsdk/alpha-sdk-api/blob/main/docs/BUILDING_BINARIES.md"
+  description="The manual CMake recipe behind crsdk build, the platform matrix, and what to ship."
+/>
