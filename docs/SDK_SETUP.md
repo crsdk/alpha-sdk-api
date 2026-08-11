@@ -97,8 +97,8 @@ adapter libraries into `shared/sdk/lib/CrAdapter/`, OpenCV libraries into `share
 and the SDK integration wrapper sources into `shared/core/` — plus OpenCV headers into
 `shared/opencv/include/` when that directory is missing.
 
-(`crsdk install` runs `scripts/extract-sdk.sh` internally; you should not need to call the
-script directly.)
+(`crsdk install` performs this extraction natively — no shell script or `unzip`
+binary is involved, so it works the same on macOS, Linux, and Windows.)
 
 ## macOS Quarantine and Signing
 

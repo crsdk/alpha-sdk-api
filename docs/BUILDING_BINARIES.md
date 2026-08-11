@@ -5,7 +5,7 @@ which cannot be redistributed, so there is no prebuilt binary to download. Most
 people should just use the `crsdk` CLI, which wraps this whole recipe:
 
 ```bash
-./crsdk install --zip <sony-sdk.zip>   # accept the EULA + run scripts/extract-sdk.sh
+./crsdk install --zip <sony-sdk.zip>   # accept the EULA + extract the SDK into shared/
 ./crsdk build                          # the CMake steps below
 ```
 
@@ -35,7 +35,7 @@ dependency — jsoncpp is vendored under `api/server/third_party/`.
 
 Build on the target platform; these are not cross-compiled.
 
-| Target | Build host | `extract-sdk.sh` argument |
+| Target | Build host | `crsdk install --platform` value |
 |---|---|---|
 | `darwin-arm64` | macOS, Apple Silicon | `macos` |
 | `darwin-x64` | macOS, Intel | `macos` |

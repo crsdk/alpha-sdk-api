@@ -52,14 +52,6 @@ jobs:
         working-directory: tests/unit
         run: npm test
 
-  scripts:
-    name: Shell script checks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Syntax-check extraction helper
-        run: bash -n scripts/extract-sdk.sh
-
   cli-build:
     name: crsdk CLI (typecheck + build)
     runs-on: ubuntu-latest
