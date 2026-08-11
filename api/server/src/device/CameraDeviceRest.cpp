@@ -15,6 +15,7 @@
 
 #include "CameraDeviceRest.h"
 #include "CrDebugString.h"  // stock: CrErrorString, for the generic warning event
+#include "JsonEscape.h"
 
 #include <algorithm>
 #include <chrono>
@@ -1221,8 +1222,8 @@ void CameraDeviceRest::OnConnected(SCRSDK::DeviceConnectionVersioin /*version*/)
         cli::text model(get_model());   // width-aware (Windows Cr_Core returns UTF-16)
         cli::text id(get_id());
         m_eventCallback("connected",
-            "{\"model\":\"" + std::string(model.data()) + "\",\"id\":\"" +
-            std::string(id.data()) + "\"}");
+            "{\"model\":\"" + jsonEscape(std::string(model.data())) + "\",\"id\":\"" +
+            jsonEscape(std::string(id.data())) + "\"}");
     }
 }
 
@@ -1239,8 +1240,10 @@ void CameraDeviceRest::OnCompleteDownload(CrChar* filename, CrInt32u type) {
         cli::text file(filename);
         std::string fileType =
             (type == SCRSDK::CrDownloadSettingFileType_Setup) ? "settings" : "image";
+        // filename is a full host path on auto-transfer (C:\Users\... on Windows),
+        // so it must be escaped or the event body is unparseable JSON.
         m_eventCallback("downloadComplete",
-            "{\"filename\":\"" + std::string(file.data()) + "\",\"type\":\"" +
+            "{\"filename\":\"" + jsonEscape(std::string(file.data())) + "\",\"type\":\"" +
             fileType + "\"}");
     }
 }

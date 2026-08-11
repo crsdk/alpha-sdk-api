@@ -15,6 +15,7 @@
 #include <direct.h>
 #endif
 #include <json/json.h>
+#include "JsonEscape.h"
 #include <set>
 #include <algorithm>
 #include <map>
@@ -958,11 +959,11 @@ std::string CameraWebController::toJson(const ApiResponse& response) {
     std::ostringstream json;
     json << "{\n";
     json << "  \"success\": " << (response.success ? "true" : "false") << ",\n";
-    json << "  \"message\": \"" << response.message << "\",\n";
+    json << "  \"message\": \"" << jsonEscape(response.message) << "\",\n";
     json << "  \"camera\": {\n";
     json << "    \"connected\": " << (response.camera.connected ? "true" : "false") << ",\n";
-    json << "    \"model\": \"" << response.camera.model << "\",\n";
-    json << "    \"id\": \"" << response.camera.id << "\"\n";
+    json << "    \"model\": \"" << jsonEscape(response.camera.model) << "\",\n";
+    json << "    \"id\": \"" << jsonEscape(response.camera.id) << "\"\n";
     json << "  }";
 
     // Include data field if it has content
@@ -990,9 +991,9 @@ std::string CameraWebController::toJson(const ApiResponse& response) {
                 pair.first == "startNo" || pair.first == "supported" ||
                 pair.first == "count" || pair.first == "slot" ||
                 pair.first == "speed" || pair.first == "step") {
-                json << "    \"" << pair.first << "\": " << pair.second;
+                json << "    \"" << jsonEscape(pair.first) << "\": " << pair.second;
             } else {
-                json << "    \"" << pair.first << "\": \"" << pair.second << "\"";
+                json << "    \"" << jsonEscape(pair.first) << "\": \"" << jsonEscape(pair.second) << "\"";
             }
             first = false;
         }
@@ -1012,8 +1013,8 @@ std::string CameraWebController::toJson(const std::vector<CameraInfo>& cameras) 
     for (size_t i = 0; i < cameras.size(); ++i) {
         const auto& camera = cameras[i];
         json << "    {\n";
-        json << "      \"model\": \"" << camera.model << "\",\n";
-        json << "      \"id\": \"" << camera.id << "\",\n";
+        json << "      \"model\": \"" << jsonEscape(camera.model) << "\",\n";
+        json << "      \"id\": \"" << jsonEscape(camera.id) << "\",\n";
         json << "      \"connected\": " << (camera.connected ? "true" : "false") << "\n";
         json << "    }";
         if (i < cameras.size() - 1) json << ",";
@@ -3001,23 +3002,6 @@ PropertyData CameraWebController::getPropertyData(std::shared_ptr<CameraDevice> 
     return data;
 }
 
-// Helper: Escape a string for use inside JSON string values
-static std::string jsonEscape(const std::string& s) {
-    std::string result;
-    result.reserve(s.size());
-    for (char c : s) {
-        switch (c) {
-            case '"':  result += "\\\""; break;
-            case '\\': result += "\\\\"; break;
-            case '\n': result += "\\n"; break;
-            case '\r': result += "\\r"; break;
-            case '\t': result += "\\t"; break;
-            default:   result += c; break;
-        }
-    }
-    return result;
-}
-
 // Helper: Build ApiResponse from PropertyData
 ApiResponse CameraWebController::buildPropertyResponse(const PropertyData& propertyData,
                                                        std::shared_ptr<CameraDevice> camera) {
@@ -3037,7 +3021,8 @@ ApiResponse CameraWebController::buildPropertyResponse(const PropertyData& prope
     // "formatted" is the human-readable display string (also accepted by SET)
     response.data["property"] = propertyData.propertyName;
     response.data["value"] = propertyData.currentHexValue;
-    response.data["formatted"] = jsonEscape(propertyData.currentFormatted);
+    // Stored raw — toJson() escapes plain string values on the way out.
+    response.data["formatted"] = propertyData.currentFormatted;
     response.data["writable"] = propertyData.writable ? "true" : "false";
 
     // Build available values JSON array
