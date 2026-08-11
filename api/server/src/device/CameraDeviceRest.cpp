@@ -147,11 +147,83 @@ bool CameraDeviceRest::release() {
     return !CR_FAILED(status);
 }
 
+// Decode a string field returned by the Sony SDK into a narrow UTF-8 string.
+//
+// Why this exists: this server builds char-based (no UNICODE), so cli::text is
+// std::string and the SDK's CrChar* fields are typed char*. On macOS/Linux the
+// SDK genuinely returns narrow UTF-8, so a plain read works. But the precompiled
+// *Windows* Cr_Core returns these fields as UTF-16LE regardless of the app's
+// non-UNICODE build, so reading std::string((char*)GetModel()) or
+// std::string((char*)GetId()) stops at the first 0x00 high byte and truncates
+// model/id to their first character ("I", "C"). This decoder reads the sized
+// buffer width-aware so every platform yields the full value.
+//
+//   buf          raw buffer (CrChar* or id data buffer)
+//   sizeBytes    buffer length in bytes (GetModelSize()/GetIdSize()); typically
+//                includes the NUL terminator
+//   hexIfBinary  when true, a non-printable narrow buffer is rendered as
+//                uppercase hex (used for the id, whose data type may be binary)
+static std::string decode_sdk_string(const void* buf, CrInt32u sizeBytes,
+                                     bool hexIfBinary) {
+    const CrInt8u* b = static_cast<const CrInt8u*>(buf);
+    if (!b || sizeBytes == 0) {
+        return std::string();
+    }
+
+    // Detect UTF-16LE with ASCII payload: even byte count and every high byte
+    // (odd index) is 0x00. Model strings and camera ids are ASCII, so this is
+    // unambiguous versus a narrow buffer (which has no interior NULs).
+    bool utf16le = (sizeBytes >= 2) && (sizeBytes % 2 == 0);
+    if (utf16le) {
+        for (CrInt32u i = 1; i < sizeBytes; i += 2) {
+            if (b[i] != 0x00) { utf16le = false; break; }
+        }
+    }
+
+    std::string out;
+    if (utf16le) {
+        for (CrInt32u i = 0; i + 1 < sizeBytes; i += 2) {
+            if (b[i] == 0x00) break;                    // NUL terminator
+            out.push_back(static_cast<char>(b[i]));
+        }
+        return out;
+    }
+
+    // Narrow buffer.
+    bool printable = true;
+    for (CrInt32u i = 0; i < sizeBytes; ++i) {
+        if (b[i] == 0x00) break;
+        if (b[i] < 0x20 || b[i] > 0x7E) { printable = false; break; }
+    }
+    if (printable || !hexIfBinary) {
+        for (CrInt32u i = 0; i < sizeBytes; ++i) {
+            if (b[i] == 0x00) break;
+            out.push_back(static_cast<char>(b[i]));
+        }
+    } else {
+        // Genuinely binary id data — render as stable uppercase hex.
+        static const char* kHex = "0123456789ABCDEF";
+        for (CrInt32u i = 0; i < sizeBytes; ++i) {
+            out.push_back(kHex[(b[i] >> 4) & 0xF]);
+            out.push_back(kHex[b[i] & 0xF]);
+        }
+    }
+    return out;
+}
+
+cli::text CameraDeviceRest::get_model() const {
+    return cli::text(decode_sdk_string(m_info->GetModel(),
+                                       m_info->GetModelSize(),
+                                       /*hexIfBinary=*/false).c_str());
+}
+
 cli::text CameraDeviceRest::get_id() const {
     if (cli::ConnectionType::NETWORK == m_connType) {
         return m_info->GetMACAddressChar();
     }
-    return cli::text((char*)m_info->GetId());
+    return cli::text(decode_sdk_string(m_info->GetId(),
+                                       m_info->GetIdSize(),
+                                       /*hexIfBinary=*/true).c_str());
 }
 
 // --- Internal single-property helpers ------------------------------------
@@ -1146,7 +1218,7 @@ void CameraDeviceRest::clearPropertyWait() {
 void CameraDeviceRest::OnConnected(SCRSDK::DeviceConnectionVersioin /*version*/) {
     m_connected.store(true);
     if (m_eventCallback) {
-        cli::text model(m_info->GetModel());
+        cli::text model(get_model());   // width-aware (Windows Cr_Core returns UTF-16)
         cli::text id(get_id());
         m_eventCallback("connected",
             "{\"model\":\"" + std::string(model.data()) + "\",\"id\":\"" +
