@@ -15,6 +15,7 @@
 
 #include "CameraDeviceRest.h"
 #include "CrDebugString.h"  // stock: CrErrorString, for the generic warning event
+#include "JsonEscape.h"
 
 #include <algorithm>
 #include <chrono>
@@ -1221,8 +1222,8 @@ void CameraDeviceRest::OnConnected(SCRSDK::DeviceConnectionVersioin /*version*/)
         cli::text model(get_model());   // width-aware (Windows Cr_Core returns UTF-16)
         cli::text id(get_id());
         m_eventCallback("connected",
-            "{\"model\":\"" + std::string(model.data()) + "\",\"id\":\"" +
-            std::string(id.data()) + "\"}");
+            "{\"model\":\"" + jsonEscape(std::string(model.data())) + "\",\"id\":\"" +
+            jsonEscape(std::string(id.data())) + "\"}");
     }
 }
 
@@ -1239,8 +1240,10 @@ void CameraDeviceRest::OnCompleteDownload(CrChar* filename, CrInt32u type) {
         cli::text file(filename);
         std::string fileType =
             (type == SCRSDK::CrDownloadSettingFileType_Setup) ? "settings" : "image";
+        // filename is a full host path on auto-transfer (C:\Users\... on Windows),
+        // so it must be escaped or the event body is unparseable JSON.
         m_eventCallback("downloadComplete",
-            "{\"filename\":\"" + std::string(file.data()) + "\",\"type\":\"" +
+            "{\"filename\":\"" + jsonEscape(std::string(file.data())) + "\",\"type\":\"" +
             fileType + "\"}");
     }
 }
@@ -1441,12 +1444,7 @@ void CameraDeviceRest::OnNotifyContentsTransfer(CrInt32u notify,
             if (c < 0x20 || c > 0x7E) { valid = false; break; }
         }
         if (valid) {
-            std::string escaped;
-            for (char c : std::string(file.data())) {
-                if (c == '"' || c == '\\') escaped += '\\';
-                escaped += c;
-            }
-            oss << ",\"filename\":\"" << escaped << "\"";
+            oss << ",\"filename\":\"" << jsonEscape(std::string(file.data())) << "\"";
         }
     }
     oss << "}";
@@ -1475,7 +1473,7 @@ void CameraDeviceRest::OnNotifyRemoteTransferResult(CrInt32u notify, CrInt32u pe
         oss << "{\"percent\":" << per << ",\"notify\":\"0x" << std::hex << notify << std::dec << "\"";
         if (filename) {
             cli::text file(filename);
-            oss << ",\"filename\":\"" << file.data() << "\"";
+            oss << ",\"filename\":\"" << jsonEscape(std::string(file.data())) << "\"";
         }
         oss << "}";
         m_eventCallback("transferProgress", oss.str());
@@ -1552,8 +1550,9 @@ void CameraDeviceRest::transferPollLoop() {
 
             if (m_eventCallback) {
                 std::ostringstream oss;
+                // path.string() is a native host path — C:\Users\... on Windows.
                 oss << "{\"percent\":100,\"notify\":\"0x20093\",\"filename\":\""
-                    << path.string() << "\",\"synthetic\":true}";
+                    << jsonEscape(path.string()) << "\",\"synthetic\":true}";
                 m_eventCallback("transferProgress", oss.str());
             }
             it = m_pendingTransfers.erase(it);
