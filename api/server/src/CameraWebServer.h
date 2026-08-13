@@ -80,6 +80,10 @@ private:
     int m_serverSocket;
     std::atomic<bool> m_running;
     std::thread m_serverThread;
+    // Serializes stop() / stopLiveViewBroadcasting(), which are each reachable
+    // from the detached shutdown thread, main(), and the destructor. Guards the
+    // joins so no two callers can join the same std::thread concurrently.
+    std::mutex m_shutdownMutex;
     std::unique_ptr<CameraWebController> m_cameraController;
     
     // WebSocket support

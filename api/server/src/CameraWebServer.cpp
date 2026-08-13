@@ -168,19 +168,39 @@ bool CameraWebServer::start() {
 }
 
 void CameraWebServer::stop() {
-    if (!m_running) return;
+    // Serialized, and deliberately WITHOUT an early return before the join.
+    //
+    // stop() is reached from three directions: the detached thread spawned by
+    // POST /api/server/shutdown, main()'s run loop, and ~CameraWebServer().
+    // The old `if (!m_running) return;` guard sat above the join, so the second
+    // caller returned early and skipped it — leaving m_serverThread joinable at
+    // destruction, which is std::terminate → SIGABRT → exit 134.
+    //
+    // The mutex matters as much as the missing join: without it the two callers
+    // could reach m_serverThread.join() concurrently, and joining the same
+    // thread from two threads is itself undefined. Holding it across the whole
+    // teardown also stops ~CameraWebServer() from destroying members while the
+    // detached thread is still inside here.
+    std::lock_guard<std::mutex> guard(m_shutdownMutex);
+    const bool wasRunning = m_running.exchange(false);
 
-    std::cout << "[Shutdown] Stopping web server..." << std::endl;
-    m_running = false;
+    if (wasRunning) {
+        std::cout << "[Shutdown] Stopping web server..." << std::endl;
 
-    if (m_serverSocket >= 0) {
-        close(m_serverSocket);
-        m_serverSocket = -1;
+        if (m_serverSocket >= 0) {
+            close(m_serverSocket);
+            m_serverSocket = -1;
+        }
     }
 
+    // Always join. After the first caller joins, the thread is no longer
+    // joinable, so later callers fall through harmlessly.
     if (m_serverThread.joinable()) {
         m_serverThread.join();
     }
+
+    // The remainder is one-shot teardown; the first caller already ran it.
+    if (!wasRunning) return;
 
     // Close all SSE client sockets to unblock their keepalive loops
     {
@@ -1706,15 +1726,18 @@ void CameraWebServer::startLiveViewBroadcasting() {
 }
 
 void CameraWebServer::stopLiveViewBroadcasting() {
-    if (!m_broadcastingLiveView.load()) {
-        return;
-    }
-    
-    m_broadcastingLiveView = false;
+    // Same shape as stop(), and the same hazard: the early return sat above the
+    // join, so a second caller could leave m_broadcastThread joinable and abort
+    // at destruction. Shares stop()'s mutex so the destructor's two teardown
+    // calls cannot interleave with the detached shutdown thread. Neither
+    // function calls the other, so there is no lock ordering to get wrong.
+    std::lock_guard<std::mutex> guard(m_shutdownMutex);
+    m_broadcastingLiveView.exchange(false);
+
     if (m_broadcastThread.joinable()) {
         m_broadcastThread.join();
+        std::cout << "Stopped live view WebSocket broadcasting" << std::endl;
     }
-    std::cout << "Stopped live view WebSocket broadcasting" << std::endl;
 }
 
 void CameraWebServer::liveViewBroadcastThread() {

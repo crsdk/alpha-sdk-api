@@ -10,12 +10,17 @@
 // Global server instance for signal handling (atomic for safe concurrent access)
 std::atomic<cli::CameraWebServer*> g_server{nullptr};
 
+// Set by signalHandler, consumed by main()'s run loop.
+std::atomic<int> g_signalReceived{0};
+
+// Async-signal-safe: records the signal and returns. It must NOT call stop()
+// directly — stop() does stream I/O, joins threads, and takes several mutexes,
+// none of which are legal in a signal handler. Doing so also risks a hard
+// deadlock: a signal delivered to a thread already holding the shutdown mutex
+// would block the handler forever and make Ctrl-C stop working. main() does the
+// actual teardown once it observes this flag.
 void signalHandler(int signal) {
-    std::cout << "\nReceived signal " << signal << ", shutting down web server..." << std::endl;
-    auto* server = g_server.load();
-    if (server) {
-        server->stop();
-    }
+    g_signalReceived.store(signal);
 }
 
 int main(int argc, char* argv[]) {
@@ -72,10 +77,22 @@ int main(int argc, char* argv[]) {
     std::cout << "Press Ctrl+C to stop the server..." << std::endl;
     std::cout << std::endl;
     
-    // Keep server running until interrupted
-    while (server.isRunning()) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+    // Keep server running until interrupted, or until something else (the
+    // detached POST /api/server/shutdown thread) clears the running flag.
+    while (server.isRunning() && g_signalReceived.load() == 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
+
+    if (const int sig = g_signalReceived.load()) {
+        std::cout << "\nReceived signal " << sig << ", shutting down web server..." << std::endl;
+    }
+
+    // Tear down explicitly rather than leaving it to ~CameraWebServer(). stop()
+    // is idempotent and serialized, so this is safe even when the detached
+    // shutdown thread is already inside it — we simply block until it is done.
+    // Doing it here (not in the destructor) keeps the join on a thread that is
+    // still fully constructed.
+    server.stop();
 
     // Null out global pointer before server goes out of scope (prevents signal handler dangling pointer)
     g_server.store(nullptr);
