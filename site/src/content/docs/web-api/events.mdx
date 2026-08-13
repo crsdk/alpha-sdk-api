@@ -111,9 +111,27 @@ Only fires in `remote` connection mode with `still-image-store-destination` set 
 
 ### transferProgress
 ```json
-{"percent": 100, "notify": "0x20093", "filename": "/path/to/DSC09598.JPG"}
+{
+  "percent": 100,
+  "notify": "0x20093",
+  "cameraId": "CFCA6014E092",
+  "contentId": 131301,
+  "fileId": 1,
+  "savedPath": "/path/to/DSC09598.JPG",
+  "filename": "/path/to/DSC09598.JPG"
+}
 ```
-Only fires in `remote-transfer` mode after explicit file pull.
+Only fires in `remote-transfer` mode after an explicit file pull.
+
+`contentId` and `fileId` identify which pull completed — match them against the
+values you passed to `POST .../files/{contentId}/{fileId}/download`.
+
+`filename` duplicates `savedPath` and is retained for existing consumers; prefer
+`savedPath`.
+
+A `"synthetic": true` field marks an event produced by the server's
+filesystem-polling fallback rather than the SDK callback. On SDK V2.02 the real
+callback fires reliably and the field is absent.
 
 ### lutImportResult
 ```json
@@ -149,7 +167,7 @@ data: {"state":"unlocked"}
 
 ```
 event: transferProgress
-data: {"percent":100,"notify":"0x20093","filename":"/path/to/DSC09598.JPG"}
+data: {"percent":100,"notify":"0x20093","cameraId":"CFCA6014E092","contentId":131301,"fileId":1,"savedPath":"/path/to/DSC09598.JPG","filename":"/path/to/DSC09598.JPG"}
 ```
 
 ---

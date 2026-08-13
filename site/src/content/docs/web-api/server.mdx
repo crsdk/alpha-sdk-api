@@ -90,8 +90,15 @@ curl http://localhost:8080/api/server/status
 
 ### Server logs
 
-`GET /api/server/logs` returns buffered server log output. Query params: `lines`
-(default 100), `level` (default `info`).
+`GET /api/server/logs` returns buffered server log output.
+
+Query params: `lines` (default 100, clamped to the retained buffer) and `level`
+(default `info`, one of `debug` / `info` / `warn` / `error` — entries at or above
+the given level are returned). A non-numeric `lines` or an unrecognised `level`
+falls back to the default rather than erroring.
+
+The response reports both `total` (everything retained) and `returned` (what
+survived the filter), so a filtered response is not mistaken for data loss.
 
 <Tabs>
 <TabItem label="curl">
@@ -113,6 +120,7 @@ curl http://localhost:8080/api/server/logs
       "message": "GET /api/server/status"
     }
   ],
+  "returned": 1,
   "total": 47
 }
 ```
