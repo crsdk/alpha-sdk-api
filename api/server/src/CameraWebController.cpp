@@ -498,6 +498,30 @@ ApiResponse CameraWebController::getStatus() {
 namespace {
 
 /**
+ * The accepted `mode` values, and what each maps to.
+ *
+ * Single source of truth: the validation below and the parsing further down
+ * both read this, so they cannot drift into disagreeing about which modes are
+ * legal. The parsing cannot simply be hoisted above the already-connected
+ * short-circuit to serve as the validation, because it also assigns
+ * m_currentConnectionMode — doing that on a path that currently returns early
+ * would mutate connection state for a request that was never acted on.
+ */
+struct ConnectionModeSpec {
+    SDK::CrSdkControlMode sdkMode;
+    ConnectionMode        mode;
+};
+
+const std::map<std::string, ConnectionModeSpec>& connectionModeTable() {
+    static const std::map<std::string, ConnectionModeSpec> kModes = {
+        {"remote",          {SDK::CrSdkControlMode_Remote,           ConnectionMode::Remote}},
+        {"contents",        {SDK::CrSdkControlMode_ContentsTransfer, ConnectionMode::ContentsTransfer}},
+        {"remote-transfer", {SDK::CrSdkControlMode_RemoteTransfer,   ConnectionMode::RemoteTransfer}},
+    };
+    return kModes;
+}
+
+/**
  * Is this connect error actually about access authentication?
  *
  * Used to decide whether "check your username, password and fingerprint" is
@@ -532,8 +556,8 @@ ApiResponse CameraWebController::connectCamera(const std::string& connectionMode
     // 200 "Camera already connected" whenever a camera happened to be connected
     // — reporting success for a request that could never have been honoured,
     // and only rejecting it correctly while disconnected.
-    if (connectionMode != "remote" && connectionMode != "contents"
-        && connectionMode != "remote-transfer") {
+    const auto modeIt = connectionModeTable().find(connectionMode);
+    if (modeIt == connectionModeTable().end()) {
         response.success = false;
         response.message = "Invalid connection mode. Use: 'remote', 'contents', or 'remote-transfer'";
         return response;
@@ -554,24 +578,11 @@ ApiResponse CameraWebController::connectCamera(const std::string& connectionMode
         }
     }
 
-    // Parse connection mode
-    SDK::CrSdkControlMode sdkMode = SDK::CrSdkControlMode_Remote; // Default
-    m_currentConnectionMode = ConnectionMode::Remote;
-
-    if (connectionMode == "remote") {
-        sdkMode = SDK::CrSdkControlMode_Remote;
-        m_currentConnectionMode = ConnectionMode::Remote;
-    } else if (connectionMode == "contents") {
-        sdkMode = SDK::CrSdkControlMode_ContentsTransfer;
-        m_currentConnectionMode = ConnectionMode::ContentsTransfer;
-    } else if (connectionMode == "remote-transfer") {
-        sdkMode = SDK::CrSdkControlMode_RemoteTransfer;
-        m_currentConnectionMode = ConnectionMode::RemoteTransfer;
-    } else {
-        response.success = false;
-        response.message = "Invalid connection mode. Use: 'remote', 'contents', or 'remote-transfer'";
-        return response;
-    }
+    // Apply the mode. Validity was already established above, and modeIt points
+    // into the same table, so there is no second list of accepted values to
+    // keep in sync — and no unreachable else branch pretending to validate.
+    const SDK::CrSdkControlMode sdkMode = modeIt->second.sdkMode;
+    m_currentConnectionMode = modeIt->second.mode;
 
     std::cout << "🔗 Attempting connection in mode: " << connectionMode << std::endl;
 
@@ -661,9 +672,10 @@ ApiResponse CameraWebController::connectCamera(const std::string& connectionMode
     // outcome lands on OnConnected or OnError afterwards. Reporting success off
     // the synchronous return made every connect look like it worked — including
     // one with a deliberately wrong password. Wait for the actual answer.
-    // Whether we actually waited. Only a real wait entitles us to say "timed
-    // out"; a synchronous SDK::Connect failure never waits, and claiming a
-    // 15s timeout there names a cause and a duration that did not happen.
+    //
+    // Track whether we actually waited: only a real wait entitles us to say
+    // "timed out". A synchronous SDK::Connect failure never waits, and claiming
+    // a 15s timeout there names a cause and a duration that did not happen.
     bool waited = false;
     if (connect_result) {
         waited = true;
