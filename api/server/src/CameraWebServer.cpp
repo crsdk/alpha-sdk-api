@@ -2553,6 +2553,42 @@ HttpResponse CameraWebServer::handleApiListSDCardFiles(const std::string& camera
     return response;
 }
 
+namespace {
+
+// Maps a failed RemoteTransfer start into an HTTP status + a message that says
+// what actually happened. Shared by the full-file and thumbnail/screennail
+// paths so the two cannot drift.
+//
+// 0x8D03 (CrError_RemoteTransfer_GetContentsDataDisable) is the important one:
+// it does NOT mean the requested transfer failed, it means one is already in
+// flight. It clears on its own the moment the in-flight transfer finishes, so
+// it is a 409 the caller should retry — not a 400. Reporting it as a hard
+// failure is what led the investigation in #40 to conclude that a single stuck
+// transfer "latches" the subsystem; in fact every later request was correctly
+// reporting "busy" because the stuck one never completed.
+struct TransferError {
+    int statusCode;
+    std::string message;
+};
+
+TransferError classifyTransferError(const std::string& sdkMessage, const std::string& what) {
+    if (sdkMessage.find("0x00008D03") != std::string::npos) {
+        return {409,
+                "A transfer is already in progress on this camera, so the " + what +
+                " was not started. This is transient — retry once the current transfer "
+                "completes (watch for a transferProgress event). SDK error 0x00008D03."};
+    }
+    if (sdkMessage.find("0x00008D02") != std::string::npos) {
+        return {400,
+                "Failed to start " + what +
+                ". Confirm the file identifiers are valid for the current connection "
+                "mode and retry (SDK error 0x00008D02)."};
+    }
+    return {400, sdkMessage};
+}
+
+}  // namespace
+
 HttpResponse CameraWebServer::handleApiDownloadSDCardFile(
     const std::string& cameraId,
     const std::string& slotNumber,
@@ -2616,12 +2652,11 @@ HttpResponse CameraWebServer::handleApiDownloadSDCardFile(
         root["message"] = result.message.empty() ? "Download started" : result.message;
         response.statusCode = 202; // Accepted — download is async
     } else {
-        std::string message = result.error_message;
-        if (message.find("0x00008D02") != std::string::npos) {
-            message = "Failed to start file download. Confirm the file identifiers are valid for the current connection mode and retry (SDK error 0x00008D02).";
-        }
-        root["message"] = message;
-        response.statusCode = 400;
+        const auto classified = classifyTransferError(result.error_message, "file download");
+        root["message"] = classified.message;
+        root["retryable"] = (classified.statusCode == 409);
+        response.statusCode = classified.statusCode;
+        addLog(classified.statusCode == 409 ? "warn" : "error", classified.message, cameraId);
     }
 
     response.body = root.toStyledString();
@@ -2686,8 +2721,12 @@ HttpResponse CameraWebServer::handleApiDownloadCompressed(
         root["type"] = type;
         response.statusCode = 202;
     } else {
-        root["message"] = result.error_message;
-        response.statusCode = 400;
+        const auto classified = classifyTransferError(result.error_message, type + " download");
+        root["message"] = classified.message;
+        root["type"] = type;
+        root["retryable"] = (classified.statusCode == 409);
+        response.statusCode = classified.statusCode;
+        addLog(classified.statusCode == 409 ? "warn" : "error", classified.message, cameraId);
     }
 
     response.body = root.toStyledString();
