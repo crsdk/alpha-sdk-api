@@ -103,6 +103,11 @@ bool CameraDeviceRest::connect(SCRSDK::CrSdkControlMode openMode,
                                inputId, password.c_str(), fingerprint.c_str(),
                                static_cast<CrInt32u>(fingerprint.size()));
     if (CR_FAILED(status)) {
+        // Store the status before bailing out. Without this the caller sees
+        // last_error() == 0, skips wait_for_connection() (it only runs when
+        // connect() succeeded), and reports a timeout that never happened —
+        // discarding the one piece of information that identifies the fault.
+        m_lastError.store(status);
         return false;
     }
     // Default save destination to the current working directory.
