@@ -527,6 +527,18 @@ ApiResponse CameraWebController::connectCamera(const std::string& connectionMode
 
     ApiResponse response;
 
+    // Validate the mode before anything else. This check used to live below the
+    // already-connected short-circuit, so an invalid mode returned
+    // 200 "Camera already connected" whenever a camera happened to be connected
+    // — reporting success for a request that could never have been honoured,
+    // and only rejecting it correctly while disconnected.
+    if (connectionMode != "remote" && connectionMode != "contents"
+        && connectionMode != "remote-transfer") {
+        response.success = false;
+        response.message = "Invalid connection mode. Use: 'remote', 'contents', or 'remote-transfer'";
+        return response;
+    }
+
     // Check if this specific camera is already connected (per-camera check)
     if (!cameraId.empty()) {
         std::lock_guard<std::mutex> threadLock(m_cameraThreadsMutex);
@@ -6956,6 +6968,12 @@ ApiResponse CameraWebController::executeActionGeneric(const std::string& cameraI
                 response.success = zoomResult.success;
                 response.message = zoomResult.message;
                 response.data = zoomResult.data;
+                // executeZoomAction() fills the camera block via
+                // populateResponseCamera(); copying only success/message/data
+                // dropped it on the floor, so every zoom response — including
+                // successful ones on a live camera — reported
+                // {connected:false, model:"", id:""}.
+                response.camera = zoomResult.camera;
                 return response;
             }
             else if (actionName == "focus-near-far") {

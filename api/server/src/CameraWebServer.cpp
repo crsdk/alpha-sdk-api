@@ -1524,6 +1524,11 @@ HttpResponse CameraWebServer::handleApiGetAllProperties(const std::string& camer
 
     HttpResponse response;
     response.contentType = "application/json";
+    // openapi.yaml documents 400 for "camera not connected or bulk retrieval
+    // failed"; this handler previously left the default 200 in place, so a
+    // failure was reported as success at the HTTP layer and only contradicted
+    // by the body's "success": false.
+    response.statusCode = result.success ? 200 : 400;
     response.body = m_cameraController->toJson(result);
     return response;
 }
