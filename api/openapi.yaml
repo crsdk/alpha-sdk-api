@@ -1301,7 +1301,7 @@ paths:
         | `propertyChanged` | `OnPropertyChangedCodes` | `{cameraId, codes: [...]}` | One or more property values changed on the camera |
         | `afStatus` | `OnWarning` (`CrWarningExt_AFStatus`) | `{state: "focused" \| "unlocked" \| "tracking", source?}` | Autofocus state changed |
         | `downloadComplete` | `OnCompleteDownload` | `{cameraId, filename, savedPath}` | Auto-transferred image saved to host (remote mode + matching `still-image-store-destination`) |
-        | `transferProgress` | `OnNotifyRemoteTransferResult` (or filesystem polling fallback) | `{cameraId, contentId, fileId, percent, savedPath?}` | Explicit file-pull progress (remote-transfer mode). On macOS V2.01 the SDK callback is unreliable; the server falls back to filesystem polling and emits synthetic events |
+        | `transferProgress` | `OnNotifyRemoteTransferResult` (or filesystem polling fallback) | `{cameraId, contentId, fileId, percent, notify, savedPath?, filename?, synthetic?}` | Explicit file-pull progress (remote-transfer mode). `filename` duplicates `savedPath` and is retained for existing consumers — prefer `savedPath`. `synthetic: true` marks an event produced by the filesystem-polling fallback rather than the SDK callback; on SDK V2.02 (macOS/Linux) the real callback fires reliably and `synthetic` is absent |
         | `contentsTransfer` | `OnContentsTransfer` | `{cameraId, files: [...]}` | Contents-transfer mode file list update (printable-ASCII filenames only) |
         | `operationResult` | `OnCompleteOperation` | `{cameraId, operation, result}` | Generic SDK operation completed (e.g. control codes, non-shutter commands) |
         | `error` | `OnError` | `{cameraId, code, message}` | SDK error occurred |

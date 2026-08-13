@@ -547,7 +547,12 @@ CameraDeviceRest::FileDownloadResult CameraDeviceRest::download_remote_transfer_
     {
         std::lock_guard<std::mutex> lock(m_pendingTransfersMtx);
         m_pendingTransfers.push_back(
-            {effectiveSaveDir, std::move(preSnapshot), std::chrono::steady_clock::now()});
+            {effectiveSaveDir, std::move(preSnapshot), std::chrono::steady_clock::now(),
+             static_cast<unsigned int>(content_id), static_cast<unsigned int>(file_id)});
+    }
+    m_inFlightContentId.store(static_cast<unsigned int>(content_id));
+    m_inFlightFileId.store(static_cast<unsigned int>(file_id));
+    {
     }
     startTransferPolling();
 
@@ -592,7 +597,12 @@ CameraDeviceRest::FileDownloadResult CameraDeviceRest::download_remote_transfer_
     {
         std::lock_guard<std::mutex> lock(m_pendingTransfersMtx);
         m_pendingTransfers.push_back(
-            {effectiveSaveDir, std::move(preSnapshot), std::chrono::steady_clock::now()});
+            {effectiveSaveDir, std::move(preSnapshot), std::chrono::steady_clock::now(),
+             static_cast<unsigned int>(content_id), static_cast<unsigned int>(file_id)});
+    }
+    m_inFlightContentId.store(static_cast<unsigned int>(content_id));
+    m_inFlightFileId.store(static_cast<unsigned int>(file_id));
+    {
     }
     startTransferPolling();
 
@@ -633,7 +643,12 @@ CameraDeviceRest::FileDownloadResult CameraDeviceRest::download_remote_transfer_
     {
         std::lock_guard<std::mutex> lock(m_pendingTransfersMtx);
         m_pendingTransfers.push_back(
-            {effectiveSaveDir, std::move(preSnapshot), std::chrono::steady_clock::now()});
+            {effectiveSaveDir, std::move(preSnapshot), std::chrono::steady_clock::now(),
+             static_cast<unsigned int>(content_id), static_cast<unsigned int>(file_id)});
+    }
+    m_inFlightContentId.store(static_cast<unsigned int>(content_id));
+    m_inFlightFileId.store(static_cast<unsigned int>(file_id));
+    {
     }
     startTransferPolling();
 
@@ -1463,17 +1478,28 @@ void CameraDeviceRest::OnNotifyRemoteTransferResult(CrInt32u notify, CrInt32u pe
     // The SDK reports progress itself on this build, so the disk-polling
     // fallback must stay out of the way from now on.
     m_realTransferCallbackSeen.store(true);
-    // A real SDK callback fired — cancel the disk-polling fallback.
+    // A real SDK callback fired — cancel the disk-polling fallback. Capture the
+    // pending entry's identifiers first: the SDK hands us only a filename, and
+    // the spec's transferProgress carries contentId/fileId.
+    const unsigned int contentId = m_inFlightContentId.load();
+    const unsigned int fileId = m_inFlightFileId.load();
     {
         std::lock_guard<std::mutex> lock(m_pendingTransfersMtx);
         m_pendingTransfers.clear();
     }
     if (m_eventCallback) {
         std::ostringstream oss;
-        oss << "{\"percent\":" << per << ",\"notify\":\"0x" << std::hex << notify << std::dec << "\"";
+        oss << "{\"percent\":" << per << ",\"notify\":\"0x" << std::hex << notify << std::dec << "\""
+            << ",\"cameraId\":\"" << jsonEscape(std::string(get_id().data())) << "\""
+            << ",\"contentId\":" << contentId
+            << ",\"fileId\":" << fileId;
         if (filename) {
             cli::text file(filename);
-            oss << ",\"filename\":\"" << jsonEscape(std::string(file.data())) << "\"";
+            const std::string path = jsonEscape(std::string(file.data()));
+            // `savedPath` is the documented field; `filename` is retained
+            // because existing consumers (mcp/src/tools/files.ts) read it.
+            oss << ",\"savedPath\":\"" << path << "\""
+                << ",\"filename\":\"" << path << "\"";
         }
         oss << "}";
         m_eventCallback("transferProgress", oss.str());
@@ -1551,8 +1577,14 @@ void CameraDeviceRest::transferPollLoop() {
             if (m_eventCallback) {
                 std::ostringstream oss;
                 // path.string() is a native host path — C:\Users\... on Windows.
-                oss << "{\"percent\":100,\"notify\":\"0x20093\",\"filename\":\""
-                    << jsonEscape(path.string()) << "\",\"synthetic\":true}";
+                const std::string saved = jsonEscape(path.string());
+                oss << "{\"percent\":100,\"notify\":\"0x20093\""
+                    << ",\"cameraId\":\"" << jsonEscape(std::string(get_id().data())) << "\""
+                    << ",\"contentId\":" << it->contentId
+                    << ",\"fileId\":" << it->fileId
+                    << ",\"savedPath\":\"" << saved << "\""
+                    << ",\"filename\":\"" << saved << "\""
+                    << ",\"synthetic\":true}";
                 m_eventCallback("transferProgress", oss.str());
             }
             it = m_pendingTransfers.erase(it);
