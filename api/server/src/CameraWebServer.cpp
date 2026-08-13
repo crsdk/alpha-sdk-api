@@ -334,21 +334,40 @@ void CameraWebServer::handleClient(int clientSocket) {
     close(clientSocket);
 }
 
+std::string HttpRequest::queryParam(const std::string& name, const std::string& fallback) const {
+    size_t pos = 0;
+    while (pos < query.size()) {
+        const size_t amp = query.find('&', pos);
+        const size_t end = (amp == std::string::npos) ? query.size() : amp;
+        const size_t eq = query.find('=', pos);
+        if (eq != std::string::npos && eq < end && query.compare(pos, eq - pos, name) == 0) {
+            std::string value = query.substr(eq + 1, end - eq - 1);
+            if (!value.empty()) return value;
+        }
+        if (amp == std::string::npos) break;
+        pos = amp + 1;
+    }
+    return fallback;
+}
+
 HttpRequest CameraWebServer::parseRequest(const std::string& request) {
     HttpRequest req;
     
     std::istringstream iss(request);
     std::string line;
-    
+
     // Parse request line (GET /path HTTP/1.1)
     if (std::getline(iss, line)) {
         std::istringstream requestLine(line);
         std::string httpVersion;
         requestLine >> req.method >> req.path >> httpVersion;
 
-        // Remove query parameters if present
+        // Split the query string off the path. Routing matches on the bare
+        // path, but the query is kept — it used to be discarded here, which is
+        // why handlers documenting `?lines=`/`?level=` could never honour them.
         size_t queryPos = req.path.find('?');
         if (queryPos != std::string::npos) {
+            req.query = req.path.substr(queryPos + 1);
             req.path = req.path.substr(0, queryPos);
         }
     }
@@ -3282,24 +3301,30 @@ HttpResponse CameraWebServer::handleApiServerLogs(const HttpRequest& request) {
     response.contentType = "application/json";
     response.statusCode = 200;
 
-    // Parse query parameters: ?lines=100&level=info
-    int maxLines = 100;
-    std::string minLevel = "info";
-
-    // Query params could be parsed from request.path if needed in the future
-
-    std::lock_guard<std::mutex> lock(m_logMutex);
-
-    // Filter by level
     auto levelPriority = [](const std::string& level) -> int {
         if (level == "debug") return 0;
         if (level == "info") return 1;
         if (level == "warn") return 2;
         if (level == "error") return 3;
-        return 1;
+        return -1;  // unrecognised
     };
 
-    int minPriority = levelPriority(minLevel);
+    // Parse query parameters: ?lines=100&level=info
+    int maxLines = 100;
+    try {
+        const int requested = std::stoi(request.queryParam("lines", "100"));
+        // Clamp rather than reject: a caller asking for more than we retain
+        // should get everything we have, not an error.
+        maxLines = std::max(1, std::min(requested, static_cast<int>(MAX_LOG_ENTRIES)));
+    } catch (const std::exception&) {
+        maxLines = 100;  // non-numeric ?lines= falls back to the default
+    }
+
+    const std::string requestedLevel = request.queryParam("level", "info");
+    int minPriority = levelPriority(requestedLevel);
+    if (minPriority < 0) minPriority = levelPriority("info");
+
+    std::lock_guard<std::mutex> lock(m_logMutex);
 
     std::ostringstream json;
     json << "{\n  \"success\": true,\n  \"logs\": [\n";
@@ -3323,7 +3348,9 @@ HttpResponse CameraWebServer::handleApiServerLogs(const HttpRequest& request) {
         }
     }
 
-    json << "\n  ],\n  \"total\": " << total << "\n}";
+    // `total` is everything retained; `returned` is what survived the lines/level
+    // filter. Without both, a filtered response looks like data loss.
+    json << "\n  ],\n  \"returned\": " << count << ",\n  \"total\": " << total << "\n}";
 
     response.body = json.str();
     return response;

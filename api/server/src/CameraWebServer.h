@@ -33,10 +33,16 @@ namespace cli {
 
 struct HttpRequest {
     std::string method;
-    std::string path;
+    std::string path;   // query string stripped, so routing stays exact-match
+    std::string query;  // raw query string, without the leading '?'
     std::string body;
     std::string headers;
     std::string contentType;
+
+    // Value of `name` from the query string, or `fallback` if absent/empty.
+    // Percent-decoding is deliberately not attempted: the only consumers today
+    // are numeric/enum scalars, and a half-correct decoder is worse than none.
+    std::string queryParam(const std::string& name, const std::string& fallback = "") const;
 };
 
 struct HttpResponse {
