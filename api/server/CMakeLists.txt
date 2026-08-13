@@ -86,9 +86,15 @@ if(APPLE)
         BUILD_RPATH "@executable_path"
     )
 elseif(UNIX)
+    # Every runtime lib is copied next to the executable below (POST_BUILD), so
+    # $ORIGIN alone resolves everything — in the build tree and in the .mcpb.
+    # BUILD_WITH_INSTALL_RPATH stops CMake appending the linked libraries'
+    # absolute source-tree directories to the build RPATH; those would ship in
+    # the binary and let it silently fall back to the build machine's checkout,
+    # masking libs missing from the bundle.
     set_target_properties(${WEBAPP_TARGET} PROPERTIES
-        BUILD_RPATH "$ORIGIN"
         INSTALL_RPATH "$ORIGIN"
+        BUILD_WITH_INSTALL_RPATH TRUE
     )
 endif()
 
