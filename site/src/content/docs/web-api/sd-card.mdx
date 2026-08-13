@@ -64,7 +64,26 @@ curl -X POST http://localhost:8080/api/cameras/D10F60149B0C/sd-card/slot/1/files
 </Tabs>
 
 
-Listen for `transferProgress` SSE events to track download progress in `remote-transfer` mode.
+Listen for `transferProgress` SSE events to track download progress in `remote-transfer` mode. Match the event's `contentId` / `fileId` against the ones you requested to identify which pull completed.
+
+### One transfer at a time
+
+The SDK permits a single RemoteTransfer operation at a time. A download, thumbnail
+or screennail request issued while another is still in flight is rejected with:
+
+```json
+HTTP 409
+{
+  "success": false,
+  "retryable": true,
+  "message": "A transfer is already in progress on this camera, so the file download was not started. This is transient — retry once the current transfer completes (watch for a transferProgress event). SDK error 0x00008D03."
+}
+```
+
+This is transient, not a failure of the requested file: wait for the in-flight
+transfer's `transferProgress` event and retry. A `400` with `0x00008D02` is the
+different case — the file identifiers are not valid for the current connection
+mode.
 
 ---
 

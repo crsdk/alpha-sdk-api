@@ -168,19 +168,39 @@ bool CameraWebServer::start() {
 }
 
 void CameraWebServer::stop() {
-    if (!m_running) return;
+    // Serialized, and deliberately WITHOUT an early return before the join.
+    //
+    // stop() is reached from three directions: the detached thread spawned by
+    // POST /api/server/shutdown, main()'s run loop, and ~CameraWebServer().
+    // The old `if (!m_running) return;` guard sat above the join, so the second
+    // caller returned early and skipped it — leaving m_serverThread joinable at
+    // destruction, which is std::terminate → SIGABRT → exit 134.
+    //
+    // The mutex matters as much as the missing join: without it the two callers
+    // could reach m_serverThread.join() concurrently, and joining the same
+    // thread from two threads is itself undefined. Holding it across the whole
+    // teardown also stops ~CameraWebServer() from destroying members while the
+    // detached thread is still inside here.
+    std::lock_guard<std::mutex> guard(m_shutdownMutex);
+    const bool wasRunning = m_running.exchange(false);
 
-    std::cout << "[Shutdown] Stopping web server..." << std::endl;
-    m_running = false;
+    if (wasRunning) {
+        std::cout << "[Shutdown] Stopping web server..." << std::endl;
 
-    if (m_serverSocket >= 0) {
-        close(m_serverSocket);
-        m_serverSocket = -1;
+        if (m_serverSocket >= 0) {
+            close(m_serverSocket);
+            m_serverSocket = -1;
+        }
     }
 
+    // Always join. After the first caller joins, the thread is no longer
+    // joinable, so later callers fall through harmlessly.
     if (m_serverThread.joinable()) {
         m_serverThread.join();
     }
+
+    // The remainder is one-shot teardown; the first caller already ran it.
+    if (!wasRunning) return;
 
     // Close all SSE client sockets to unblock their keepalive loops
     {
@@ -314,21 +334,40 @@ void CameraWebServer::handleClient(int clientSocket) {
     close(clientSocket);
 }
 
+std::string HttpRequest::queryParam(const std::string& name, const std::string& fallback) const {
+    size_t pos = 0;
+    while (pos < query.size()) {
+        const size_t amp = query.find('&', pos);
+        const size_t end = (amp == std::string::npos) ? query.size() : amp;
+        const size_t eq = query.find('=', pos);
+        if (eq != std::string::npos && eq < end && query.compare(pos, eq - pos, name) == 0) {
+            std::string value = query.substr(eq + 1, end - eq - 1);
+            if (!value.empty()) return value;
+        }
+        if (amp == std::string::npos) break;
+        pos = amp + 1;
+    }
+    return fallback;
+}
+
 HttpRequest CameraWebServer::parseRequest(const std::string& request) {
     HttpRequest req;
     
     std::istringstream iss(request);
     std::string line;
-    
+
     // Parse request line (GET /path HTTP/1.1)
     if (std::getline(iss, line)) {
         std::istringstream requestLine(line);
         std::string httpVersion;
         requestLine >> req.method >> req.path >> httpVersion;
 
-        // Remove query parameters if present
+        // Split the query string off the path. Routing matches on the bare
+        // path, but the query is kept — it used to be discarded here, which is
+        // why handlers documenting `?lines=`/`?level=` could never honour them.
         size_t queryPos = req.path.find('?');
         if (queryPos != std::string::npos) {
+            req.query = req.path.substr(queryPos + 1);
             req.path = req.path.substr(0, queryPos);
         }
     }
@@ -1706,15 +1745,18 @@ void CameraWebServer::startLiveViewBroadcasting() {
 }
 
 void CameraWebServer::stopLiveViewBroadcasting() {
-    if (!m_broadcastingLiveView.load()) {
-        return;
-    }
-    
-    m_broadcastingLiveView = false;
+    // Same shape as stop(), and the same hazard: the early return sat above the
+    // join, so a second caller could leave m_broadcastThread joinable and abort
+    // at destruction. Shares stop()'s mutex so the destructor's two teardown
+    // calls cannot interleave with the detached shutdown thread. Neither
+    // function calls the other, so there is no lock ordering to get wrong.
+    std::lock_guard<std::mutex> guard(m_shutdownMutex);
+    m_broadcastingLiveView.exchange(false);
+
     if (m_broadcastThread.joinable()) {
         m_broadcastThread.join();
+        std::cout << "Stopped live view WebSocket broadcasting" << std::endl;
     }
-    std::cout << "Stopped live view WebSocket broadcasting" << std::endl;
 }
 
 void CameraWebServer::liveViewBroadcastThread() {
@@ -2511,6 +2553,42 @@ HttpResponse CameraWebServer::handleApiListSDCardFiles(const std::string& camera
     return response;
 }
 
+namespace {
+
+// Maps a failed RemoteTransfer start into an HTTP status + a message that says
+// what actually happened. Shared by the full-file and thumbnail/screennail
+// paths so the two cannot drift.
+//
+// 0x8D03 (CrError_RemoteTransfer_GetContentsDataDisable) is the important one:
+// it does NOT mean the requested transfer failed, it means one is already in
+// flight. It clears on its own the moment the in-flight transfer finishes, so
+// it is a 409 the caller should retry — not a 400. Reporting it as a hard
+// failure is what led the investigation in #40 to conclude that a single stuck
+// transfer "latches" the subsystem; in fact every later request was correctly
+// reporting "busy" because the stuck one never completed.
+struct TransferError {
+    int statusCode;
+    std::string message;
+};
+
+TransferError classifyTransferError(const std::string& sdkMessage, const std::string& what) {
+    if (sdkMessage.find("0x00008D03") != std::string::npos) {
+        return {409,
+                "A transfer is already in progress on this camera, so the " + what +
+                " was not started. This is transient — retry once the current transfer "
+                "completes (watch for a transferProgress event). SDK error 0x00008D03."};
+    }
+    if (sdkMessage.find("0x00008D02") != std::string::npos) {
+        return {400,
+                "Failed to start " + what +
+                ". Confirm the file identifiers are valid for the current connection "
+                "mode and retry (SDK error 0x00008D02)."};
+    }
+    return {400, sdkMessage};
+}
+
+}  // namespace
+
 HttpResponse CameraWebServer::handleApiDownloadSDCardFile(
     const std::string& cameraId,
     const std::string& slotNumber,
@@ -2574,12 +2652,11 @@ HttpResponse CameraWebServer::handleApiDownloadSDCardFile(
         root["message"] = result.message.empty() ? "Download started" : result.message;
         response.statusCode = 202; // Accepted — download is async
     } else {
-        std::string message = result.error_message;
-        if (message.find("0x00008D02") != std::string::npos) {
-            message = "Failed to start file download. Confirm the file identifiers are valid for the current connection mode and retry (SDK error 0x00008D02).";
-        }
-        root["message"] = message;
-        response.statusCode = 400;
+        const auto classified = classifyTransferError(result.error_message, "file download");
+        root["message"] = classified.message;
+        root["retryable"] = (classified.statusCode == 409);
+        response.statusCode = classified.statusCode;
+        addLog(classified.statusCode == 409 ? "warn" : "error", classified.message, cameraId);
     }
 
     response.body = root.toStyledString();
@@ -2644,8 +2721,12 @@ HttpResponse CameraWebServer::handleApiDownloadCompressed(
         root["type"] = type;
         response.statusCode = 202;
     } else {
-        root["message"] = result.error_message;
-        response.statusCode = 400;
+        const auto classified = classifyTransferError(result.error_message, type + " download");
+        root["message"] = classified.message;
+        root["type"] = type;
+        root["retryable"] = (classified.statusCode == 409);
+        response.statusCode = classified.statusCode;
+        addLog(classified.statusCode == 409 ? "warn" : "error", classified.message, cameraId);
     }
 
     response.body = root.toStyledString();
@@ -3259,24 +3340,30 @@ HttpResponse CameraWebServer::handleApiServerLogs(const HttpRequest& request) {
     response.contentType = "application/json";
     response.statusCode = 200;
 
-    // Parse query parameters: ?lines=100&level=info
-    int maxLines = 100;
-    std::string minLevel = "info";
-
-    // Query params could be parsed from request.path if needed in the future
-
-    std::lock_guard<std::mutex> lock(m_logMutex);
-
-    // Filter by level
     auto levelPriority = [](const std::string& level) -> int {
         if (level == "debug") return 0;
         if (level == "info") return 1;
         if (level == "warn") return 2;
         if (level == "error") return 3;
-        return 1;
+        return -1;  // unrecognised
     };
 
-    int minPriority = levelPriority(minLevel);
+    // Parse query parameters: ?lines=100&level=info
+    int maxLines = 100;
+    try {
+        const int requested = std::stoi(request.queryParam("lines", "100"));
+        // Clamp rather than reject: a caller asking for more than we retain
+        // should get everything we have, not an error.
+        maxLines = std::max(1, std::min(requested, static_cast<int>(MAX_LOG_ENTRIES)));
+    } catch (const std::exception&) {
+        maxLines = 100;  // non-numeric ?lines= falls back to the default
+    }
+
+    const std::string requestedLevel = request.queryParam("level", "info");
+    int minPriority = levelPriority(requestedLevel);
+    if (minPriority < 0) minPriority = levelPriority("info");
+
+    std::lock_guard<std::mutex> lock(m_logMutex);
 
     std::ostringstream json;
     json << "{\n  \"success\": true,\n  \"logs\": [\n";
@@ -3300,7 +3387,9 @@ HttpResponse CameraWebServer::handleApiServerLogs(const HttpRequest& request) {
         }
     }
 
-    json << "\n  ],\n  \"total\": " << total << "\n}";
+    // `total` is everything retained; `returned` is what survived the lines/level
+    // filter. Without both, a filtered response looks like data loss.
+    json << "\n  ],\n  \"returned\": " << count << ",\n  \"total\": " << total << "\n}";
 
     response.body = json.str();
     return response;

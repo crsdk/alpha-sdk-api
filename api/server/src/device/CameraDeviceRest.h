@@ -56,6 +56,12 @@ struct PendingTransfer {
     std::string saveDir;                              // directory to poll
     std::set<std::string> preSnapshot;                // files present before download
     std::chrono::steady_clock::time_point startTime;
+    // Carried so completion events can identify *which* transfer finished — the
+    // SDK callback reports only a filename. The SDK permits one transfer at a
+    // time (a second start returns 0x8D03), so at most one entry is ever
+    // pending and the correlation is unambiguous.
+    unsigned int contentId = 0;
+    unsigned int fileId = 0;
     // The SDK creates the destination file when the transfer STARTS and streams
     // into it, so "a new file appeared" does not mean "the transfer finished".
     // Completion is only declared once the size stops changing between polls.
@@ -378,6 +384,15 @@ private:
     // has fired we must never emit synthetic completions again, or clients get
     // a premature percent:100 while the file is still being written.
     std::atomic<bool>            m_realTransferCallbackSeen{false};
+    // Identity of the transfer currently in flight, for completion events.
+    // Deliberately NOT read from m_pendingTransfers: once a real SDK callback
+    // has been seen, transferPollLoop() clears that list on every tick to keep
+    // the disk-polling fallback out of the way, so it is empty by the time the
+    // callback for any transfer after the first arrives. The SDK allows one
+    // transfer at a time (a second start returns 0x8D03), so a single pair is
+    // sufficient.
+    std::atomic<unsigned int>    m_inFlightContentId{0};
+    std::atomic<unsigned int>    m_inFlightFileId{0};
 
     // Remote-transfer per-slot content lists (SDK-allocated; freed via
     // release_contents_info) and the download-in-progress flag the transfer
