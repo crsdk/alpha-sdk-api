@@ -495,10 +495,73 @@ ApiResponse CameraWebController::getStatus() {
     return response;
 }
 
+namespace {
+
+/**
+ * The accepted `mode` values, and what each maps to.
+ *
+ * Single source of truth: the validation below and the parsing further down
+ * both read this, so they cannot drift into disagreeing about which modes are
+ * legal. The parsing cannot simply be hoisted above the already-connected
+ * short-circuit to serve as the validation, because it also assigns
+ * m_currentConnectionMode — doing that on a path that currently returns early
+ * would mutate connection state for a request that was never acted on.
+ */
+struct ConnectionModeSpec {
+    SDK::CrSdkControlMode sdkMode;
+    ConnectionMode        mode;
+};
+
+const std::map<std::string, ConnectionModeSpec>& connectionModeTable() {
+    static const std::map<std::string, ConnectionModeSpec> kModes = {
+        {"remote",          {SDK::CrSdkControlMode_Remote,           ConnectionMode::Remote}},
+        {"contents",        {SDK::CrSdkControlMode_ContentsTransfer, ConnectionMode::ContentsTransfer}},
+        {"remote-transfer", {SDK::CrSdkControlMode_RemoteTransfer,   ConnectionMode::RemoteTransfer}},
+    };
+    return kModes;
+}
+
+/**
+ * Is this connect error actually about access authentication?
+ *
+ * Used to decide whether "check your username, password and fingerprint" is
+ * useful advice. It was previously appended to every unrecognised code whenever
+ * credentials had been supplied, which meant a transport failure — a USB hub, or
+ * another process holding the camera — told you to go check your password.
+ */
+bool isSshAuthError(unsigned int err) {
+    switch (err) {
+        case SDK::CrError_Connect_SSH_NotSupported:
+        case SDK::CrError_Connect_SSH_InvalidParameter:
+        case SDK::CrError_Connect_SSH_ServerConnectFailed:
+        case SDK::CrError_Connect_SSH_ServerAuthenticationFailed:
+        case SDK::CrError_Connect_SSH_UserAuthenticationFailed:
+        case SDK::CrError_Connect_SSH_PortForwardFailed:
+        case SDK::CrError_Connect_SSH_GetFingerprintFailed:
+            return true;
+        default:
+            return false;
+    }
+}
+
+}  // namespace
+
 ApiResponse CameraWebController::connectCamera(const std::string& connectionMode, const std::string& cameraId, const std::string& username, const std::string& password, const std::string& reconnecting, const std::string& fingerprint) {
     std::lock_guard<std::mutex> lock(m_discoveryMutex);
 
     ApiResponse response;
+
+    // Validate the mode before anything else. This check used to live below the
+    // already-connected short-circuit, so an invalid mode returned
+    // 200 "Camera already connected" whenever a camera happened to be connected
+    // — reporting success for a request that could never have been honoured,
+    // and only rejecting it correctly while disconnected.
+    const auto modeIt = connectionModeTable().find(connectionMode);
+    if (modeIt == connectionModeTable().end()) {
+        response.success = false;
+        response.message = "Invalid connection mode. Use: 'remote', 'contents', or 'remote-transfer'";
+        return response;
+    }
 
     // Check if this specific camera is already connected (per-camera check)
     if (!cameraId.empty()) {
@@ -515,24 +578,11 @@ ApiResponse CameraWebController::connectCamera(const std::string& connectionMode
         }
     }
 
-    // Parse connection mode
-    SDK::CrSdkControlMode sdkMode = SDK::CrSdkControlMode_Remote; // Default
-    m_currentConnectionMode = ConnectionMode::Remote;
-
-    if (connectionMode == "remote") {
-        sdkMode = SDK::CrSdkControlMode_Remote;
-        m_currentConnectionMode = ConnectionMode::Remote;
-    } else if (connectionMode == "contents") {
-        sdkMode = SDK::CrSdkControlMode_ContentsTransfer;
-        m_currentConnectionMode = ConnectionMode::ContentsTransfer;
-    } else if (connectionMode == "remote-transfer") {
-        sdkMode = SDK::CrSdkControlMode_RemoteTransfer;
-        m_currentConnectionMode = ConnectionMode::RemoteTransfer;
-    } else {
-        response.success = false;
-        response.message = "Invalid connection mode. Use: 'remote', 'contents', or 'remote-transfer'";
-        return response;
-    }
+    // Apply the mode. Validity was already established above, and modeIt points
+    // into the same table, so there is no second list of accepted values to
+    // keep in sync — and no unreachable else branch pretending to validate.
+    const SDK::CrSdkControlMode sdkMode = modeIt->second.sdkMode;
+    m_currentConnectionMode = modeIt->second.mode;
 
     std::cout << "🔗 Attempting connection in mode: " << connectionMode << std::endl;
 
@@ -622,7 +672,13 @@ ApiResponse CameraWebController::connectCamera(const std::string& connectionMode
     // outcome lands on OnConnected or OnError afterwards. Reporting success off
     // the synchronous return made every connect look like it worked — including
     // one with a deliberately wrong password. Wait for the actual answer.
+    //
+    // Track whether we actually waited: only a real wait entitles us to say
+    // "timed out". A synchronous SDK::Connect failure never waits, and claiming
+    // a 15s timeout there names a cause and a duration that did not happen.
+    bool waited = false;
     if (connect_result) {
+        waited = true;
         connect_result = targetCamera->wait_for_connection(kConnectTimeoutMs);
     }
 
@@ -703,20 +759,70 @@ ApiResponse CameraWebController::connectCamera(const std::string& connectionMode
                         std::string("This camera does not support access "
                                     "authentication (") + hex + ").";
                     break;
+
+                // Transport / session-state codes. These are not refusals, and
+                // labelling them as such sends diagnosis to camera settings
+                // when the cause is the link or another process holding the
+                // camera. Reproduced on hardware: simply having a second
+                // process already connected yields TimeOut, not Busy.
+                case SDK::CrError_Connect_TimeOut:
+                    response.message =
+                        std::string("Timed out establishing the session (") + hex +
+                        "). Most often another process on this machine already "
+                        "has the camera — check for a second server or a leftover "
+                        "process. Otherwise it is the link: if the camera is on a "
+                        "USB hub try a direct port, or check the cable. For a "
+                        "network body, confirm remote shooting is enabled.";
+                    break;
+                case SDK::CrError_Connect_RemoteTransfer_NotSupported:
+                    response.message =
+                        std::string("This camera cannot enter remote-transfer mode "
+                                    "right now (") + hex + "). A previous session may "
+                        "still be held open — connect in 'remote' mode, disconnect "
+                        "cleanly, then retry.";
+                    break;
+                case SDK::CrError_Connect_ContentsTransfer_NotSupported:
+                    response.message =
+                        std::string("This camera does not support contents-transfer "
+                                    "mode (") + hex + "). Use 'remote' or "
+                        "'remote-transfer'.";
+                    break;
+                case SDK::CrError_Connect_FailBusy:
+                    response.message =
+                        std::string("The camera is busy (") + hex + "). Another "
+                        "client may hold the session, or the body is mid-operation.";
+                    break;
+                case SDK::CrError_Connect_SessionAlreadyOpened:
+                    response.message =
+                        std::string("A session is already open on this camera (") +
+                        hex + "). Disconnect the existing session before "
+                        "reconnecting.";
+                    break;
+
                 default:
                     response.message =
                         std::string("Camera refused the connection (") + hex + ")";
-                    if (!username.empty()) {
+                    // Only point at credentials for codes that are actually about
+                    // authentication; the catch-all previously appended this to
+                    // transport errors too.
+                    if (!username.empty() && isSshAuthError(err)) {
                         response.message += ". Check the access-authentication "
                                             "username, password and fingerprint.";
                     }
                     break;
             }
-        } else {
+        } else if (waited) {
             response.message = "Connection did not complete within " +
                                std::to_string(kConnectTimeoutMs / 1000) +
                                "s. If this is a network connection, check that remote "
                                "shooting is enabled on the camera.";
+        } else {
+            // connect() failed synchronously and reported no code. Say exactly
+            // that rather than inventing a wait that never happened.
+            response.message =
+                "The SDK rejected the connection request immediately, without "
+                "reporting an error code. This usually means the camera is no "
+                "longer present — re-run discovery (GET /api/cameras) and retry.";
         }
 
         std::cout << "❌ Web controller failed to connect to camera: "
@@ -6874,6 +6980,12 @@ ApiResponse CameraWebController::executeActionGeneric(const std::string& cameraI
                 response.success = zoomResult.success;
                 response.message = zoomResult.message;
                 response.data = zoomResult.data;
+                // executeZoomAction() fills the camera block via
+                // populateResponseCamera(); copying only success/message/data
+                // dropped it on the floor, so every zoom response — including
+                // successful ones on a live camera — reported
+                // {connected:false, model:"", id:""}.
+                response.camera = zoomResult.camera;
                 return response;
             }
             else if (actionName == "focus-near-far") {
