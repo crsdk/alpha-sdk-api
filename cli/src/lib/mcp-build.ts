@@ -15,7 +15,7 @@
 // the hand-written composite core.
 // =============================================================================
 
-import { existsSync, rmSync, cpSync, mkdtempSync, mkdirSync, readdirSync, chmodSync } from 'node:fs';
+import { existsSync, rmSync, cpSync, mkdtempSync, mkdirSync, readdirSync, chmodSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -84,12 +84,29 @@ function opencvLibDir(root: string): string | null {
     process.platform === 'darwin' ? [['Darwin', 'Release', 'macos', 'bin']] :
     // Must match the layout extract.ts writes: shared/opencv/Windows/x86_64/Release/bin
     process.platform === 'win32' ? [['Windows', 'x86_64', 'Release', 'bin'], ['Windows', 'Release', 'x64', 'bin'], ['Windows', 'x64', 'vc17', 'bin']] :
-    [['Linux', 'Release', 'x64', 'lib'], ['Linux', 'Release', 'aarch64', 'lib']];
+    // Linux libs land flat in shared/opencv/Linux (extract.ts linuxSpec toRel);
+    // the Release/* paths are legacy layouts kept for older checkouts.
+    [['Linux'], ['Linux', 'Release', 'x64', 'lib'], ['Linux', 'Release', 'aarch64', 'lib']];
   for (const rel of candidates) {
     const p = join(root, 'shared', 'opencv', ...rel);
     if (existsSync(p)) return p;
   }
   return null;
+}
+
+/**
+ * Does the binary load OpenCV at runtime? Scans the image for the loader's
+ * library-name strings (ELF DT_NEEDED / Mach-O load commands / PE imports),
+ * which keeps this dependency-free instead of shelling out to readelf, otool
+ * or dumpbin. A statically linked build carries no such soname, so a miss here
+ * genuinely means "nothing to bundle".
+ */
+function linksOpenCv(bin: string): boolean {
+  const re =
+    process.platform === 'win32' ? /opencv_\w+\.dll/i :
+    process.platform === 'darwin' ? /libopencv_\w+\.dylib/ :
+    /libopencv_\w+\.so/;
+  return re.test(readFileSync(bin).toString('latin1'));
 }
 
 /**
@@ -174,11 +191,19 @@ function bundleServerBinary(root: string, stage: string): boolean {
     fail('No Sony SDK runtime libs found under shared/sdk/lib — the bundled binary would not run. Place the SDK ("crsdk install --zip") and retry.');
     return false;
   }
+  // Never ship a bundle whose binary loads OpenCV dynamically with no OpenCV
+  // staged beside it. On the build machine that still runs — the binary's rpath
+  // falls through to the source tree — so this would otherwise only surface as
+  // an exit-127 loader failure on someone else's machine.
+  if (cvLibs === 0 && linksOpenCv(binOut)) {
+    fail(`The server binary loads OpenCV dynamically, but no OpenCV runtime libs were staged${cvDir ? ` (${cvDir} is empty)` : ' (no OpenCV dir found under shared/opencv)'}. The bundle would fail to start on any machine without this source tree. Place the SDK ("crsdk install --zip") and retry.`);
+    return false;
+  }
   codesignMac(serverOut);
 
   printKV('Binary', `server/${process.platform === 'win32' ? 'CameraWebApp.exe' : 'CameraWebApp'}`);
   printKV('SDK libs', `${sdkLibs} (incl. CrAdapter)`);
-  printKV('OpenCV libs', cvDir ? String(cvLibs) : colors.dim('not found — assuming static/linked'));
+  printKV('OpenCV libs', cvLibs > 0 ? String(cvLibs) : colors.dim('none needed — statically linked'));
   return true;
 }
 
